@@ -1,0 +1,33 @@
+digraph Tree {
+node [shape=box, style="filled, rounded", color="black", fontname="helvetica"] ;
+edge [fontname="helvetica"] ;
+0 [label="pclass <= 1.5\nabsolute_error = 23.944\nsamples = 712\nvalue = 14.454", fillcolor="#fef9f6"] ;
+1 [label="alone <= 0.5\nabsolute_error = 51.608\nsamples = 163\nvalue = 69.3", fillcolor="#f4c9aa"] ;
+0 -> 1 [labeldistance=2.5, labelangle=45, headlabel="True"] ;
+2 [label="parch <= 1.5\nabsolute_error = 47.042\nsamples = 81\nvalue = 81.858", fillcolor="#f2be99"] ;
+1 -> 2 ;
+3 [label="absolute_error = 35.223\nsamples = 65\nvalue = 77.288", fillcolor="#f2c29f"] ;
+2 -> 3 ;
+4 [label="absolute_error = 57.216\nsamples = 16\nvalue = 151.55", fillcolor="#e58139"] ;
+2 -> 4 ;
+5 [label="sex <= 0.5\nabsolute_error = 44.465\nsamples = 82\nvalue = 33.76", fillcolor="#fae8db"] ;
+1 -> 5 ;
+6 [label="absolute_error = 56.968\nsamples = 28\nvalue = 86.5", fillcolor="#f1ba93"] ;
+5 -> 6 ;
+7 [label="absolute_error = 23.245\nsamples = 54\nvalue = 30.0", fillcolor="#fbece1"] ;
+5 -> 7 ;
+8 [label="alone <= 0.5\nabsolute_error = 8.054\nsamples = 549\nvalue = 10.5", fillcolor="#fffdfb"] ;
+0 -> 8 [labeldistance=2.5, labelangle=-45, headlabel="False"] ;
+9 [label="sibsp <= 4.5\nabsolute_error = 9.832\nsamples = 202\nvalue = 22.679", fillcolor="#fcf2eb"] ;
+8 -> 9 ;
+10 [label="absolute_error = 8.03\nsamples = 190\nvalue = 21.075", fillcolor="#fdf3ed"] ;
+9 -> 10 ;
+11 [label="absolute_error = 9.438\nsamples = 12\nvalue = 69.55", fillcolor="#f4c9aa"] ;
+9 -> 11 ;
+12 [label="class <= 1.5\nabsolute_error = 3.293\nsamples = 347\nvalue = 8.029", fillcolor="#ffffff"] ;
+8 -> 12 ;
+13 [label="absolute_error = 3.565\nsamples = 85\nvalue = 13.0", fillcolor="#fefbf8"] ;
+12 -> 13 ;
+14 [label="absolute_error = 2.128\nsamples = 262\nvalue = 7.896", fillcolor="#ffffff"] ;
+12 -> 14 ;
+}
