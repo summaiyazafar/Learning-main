@@ -1,8 +1,0 @@
-AppData/
-Lib/
-site-packages/
-AppData/
-__pycache__/
-*.pyc
-.env
-venv/
