@@ -1,10 +1,15 @@
-from flask import Flask, render_template
+from flask import Flask, render_template, request
 
-app=Flask(__name__)
+app = Flask(__name__)
 
-@app.route('/')
-def home():
-    return render_template('home.html', name='Summaiya')
+@app.route("/input")
+def input_page():
+    return render_template("input.html")
 
-if __name__== '__main__':
+@app.route("/submit", methods=["POST"])
+def submit():
+    name = request.form['username']
+    return f"Hello, {name}!"
+
+if __name__ == "__main__":
     app.run(debug=True)
