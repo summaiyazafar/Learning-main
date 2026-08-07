@@ -1,80 +1,98 @@
 import streamlit as st
-import pickle
-import pandas as pd
-import requests
+from src.pdf_parser import extract_text_from_pdf
 
-# TMDB API Key
-API_KEY = "e04a738a5eb0b0798172f57508b48498"
-
-# Fetch movie poster
-def fetch_poster(movie_id):
-    url = f"https://api.themoviedb.org/3/movie/{movie_id}?api_key={API_KEY}"
-    response = requests.get(url)
-    data = response.json()
-
-    return "https://image.tmdb.org/t/p/w500/" + data["poster_path"]
-
-
-# Recommend movies
-def recommend(movie):
-    movie_index = movies[movies["title"] == movie].index[0]
-    distances = similarity[movie_index]
-
-    movies_list = sorted(
-        list(enumerate(distances)),
-        reverse=True,
-        key=lambda x: x[1]
-    )[1:6]
-
-    recommended_movies = []
-    recommended_posters = []
-
-    for i in movies_list:
-        movie_id = movies.iloc[i[0]].movie_id
-
-        recommended_movies.append(movies.iloc[i[0]].title)
-        recommended_posters.append(fetch_poster(movie_id))
-
-    return recommended_movies, recommended_posters
-
-
-# Load data
-movies_dict = pickle.load(open("movies_dict.pkl", "rb"))
-movies = pd.DataFrame(movies_dict)
-
-similarity = pickle.load(open("similarity.pkl", "rb"))
-
-
-# Streamlit UI
-st.title("🎬 Movie Recommendation System")
-
-selected_movie_name = st.selectbox(
-    "Select a Movie",
-    movies["title"].values
+# -----------------------------
+# Page Configuration
+# -----------------------------
+st.set_page_config(
+    page_title="AI Resume Analyzer",
+    page_icon="📄",
+    layout="wide"
 )
 
-if st.button("Recommend Movies"):
+# -----------------------------
+# Header
+# -----------------------------
+st.title("📄 AI Resume Analyzer & ATS Score")
 
-    names, posters = recommend(selected_movie_name)
+st.markdown("""
+Analyze your resume against any job description using AI.
 
-    col1, col2, col3, col4, col5 = st.columns(5)
+### Features
+- 📄 Resume Upload
+- 💼 Job Description Analysis
+- 📊 ATS Score
+- 🧠 Skill Matching
+- 🤖 AI Feedback
+- 📈 Resume Improvement Suggestions
+""")
+
+st.divider()
+
+# -----------------------------
+# Upload Resume
+# -----------------------------
+resume_file = st.file_uploader(
+    "📄 Upload Your Resume (PDF)",
+    type=["pdf"]
+)
+
+# -----------------------------
+# Job Description
+# -----------------------------
+job_description = st.text_area(
+    "💼 Paste Job Description",
+    height=220,
+    placeholder="Paste the complete job description here..."
+)
+
+# -----------------------------
+# Analyze Button
+# -----------------------------
+if st.button("🚀 Analyze Resume"):
+
+    if resume_file is None:
+        st.warning("Please upload your resume.")
+        st.stop()
+
+    if job_description.strip() == "":
+        st.warning("Please paste a job description.")
+        st.stop()
+
+    # Extract Resume Text
+    resume_text, total_pages = extract_text_from_pdf(resume_file)
+
+    st.success("✅ Resume analyzed successfully!")
+
+    st.divider()
+
+    # Dashboard
+    col1, col2, col3 = st.columns(3)
 
     with col1:
-        st.text(names[0])
-        st.image(posters[0])
+        st.metric("📄 Total Pages", total_pages)
 
     with col2:
-        st.text(names[1])
-        st.image(posters[1])
+        st.metric("📝 Total Words", len(resume_text.split()))
 
     with col3:
-        st.text(names[2])
-        st.image(posters[2])
+        st.metric("🔤 Total Characters", len(resume_text))
 
-    with col4:
-        st.text(names[3])
-        st.image(posters[3])
+    st.divider()
 
-    with col5:
-        st.text(names[4])
-        st.image(posters[4])
+    st.subheader("📄 Resume Information")
+
+    st.write("**Uploaded File:**", resume_file.name)
+
+    st.text_area(
+        "Extracted Resume Text",
+        value=resume_text,
+        height=450
+    )
+
+    st.download_button(
+        label="📥 Download Resume Text",
+        data=resume_text,
+        file_name="resume.txt",
+        mime="text/plain"
+    )
