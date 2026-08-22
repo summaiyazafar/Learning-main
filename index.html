@@ -1,0 +1,1189 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>DigiBoost - AI Course Recommendation System</title>
+
+    <style>
+
+        /* =========================
+           RESET
+        ========================= */
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+
+        /* =========================
+           BODY
+        ========================= */
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+
+            background:
+                linear-gradient(
+                    135deg,
+                    #667eea 0%,
+                    #764ba2 100%
+                );
+
+            min-height: 100vh;
+
+            padding: 20px;
+        }
+
+
+        /* =========================
+           MAIN CONTAINER
+        ========================= */
+
+        .container {
+            max-width: 900px;
+
+            margin: 0 auto;
+
+            background: white;
+
+            border-radius: 20px;
+
+            padding: 40px;
+
+            box-shadow:
+                0 20px 60px rgba(0, 0, 0, 0.3);
+
+            animation: slideIn 0.5s ease;
+        }
+
+
+        @keyframes slideIn {
+
+            from {
+                opacity: 0;
+                transform: translateY(-30px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+
+        /* =========================
+           HEADER
+        ========================= */
+
+        .header {
+            text-align: center;
+
+            margin-bottom: 35px;
+
+            padding-bottom: 20px;
+
+            border-bottom: 3px solid #f0f0f0;
+        }
+
+
+        .header h1 {
+            color: #764ba2;
+
+            font-size: 2.8em;
+
+            font-weight: 800;
+        }
+
+
+        .header .subtitle {
+            color: #666;
+
+            font-size: 1.2em;
+
+            margin-top: 5px;
+        }
+
+
+        .header .tagline {
+            color: #999;
+
+            font-size: 0.95em;
+
+            margin-top: 5px;
+        }
+
+
+        /* =========================
+           ERROR
+        ========================= */
+
+        .error-message {
+            background: #fff0f0;
+
+            border: 1px solid #ffb3b3;
+
+            color: #c62828;
+
+            padding: 12px 15px;
+
+            border-radius: 10px;
+
+            margin-bottom: 20px;
+
+            font-weight: 600;
+        }
+
+
+        /* =========================
+           FORM
+        ========================= */
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+
+        .form-group label {
+            display: block;
+
+            font-weight: 600;
+
+            margin-bottom: 7px;
+
+            color: #333;
+
+            font-size: 0.95em;
+        }
+
+
+        .form-group input,
+        .form-group select {
+            width: 100%;
+
+            padding: 12px 15px;
+
+            border: 2px solid #e0e0e0;
+
+            border-radius: 10px;
+
+            font-size: 16px;
+
+            background: white;
+
+            transition: all 0.3s;
+        }
+
+
+        .form-group input:focus,
+        .form-group select:focus {
+            outline: none;
+
+            border-color: #764ba2;
+
+            box-shadow:
+                0 0 0 3px
+                rgba(118, 75, 162, 0.1);
+        }
+
+
+        .form-group .hint {
+            font-size: 0.85em;
+
+            color: #999;
+
+            margin-top: 5px;
+
+            line-height: 1.5;
+        }
+
+
+        /* =========================
+           BUTTON
+        ========================= */
+
+        .btn {
+            width: 100%;
+
+            padding: 14px;
+
+            background:
+                linear-gradient(
+                    135deg,
+                    #667eea 0%,
+                    #764ba2 100%
+                );
+
+            color: white;
+
+            border: none;
+
+            border-radius: 10px;
+
+            font-size: 18px;
+
+            font-weight: 600;
+
+            cursor: pointer;
+
+            transition: all 0.3s;
+        }
+
+
+        .btn:hover {
+            transform: translateY(-2px);
+
+            box-shadow:
+                0 10px 30px
+                rgba(118, 75, 162, 0.3);
+        }
+
+
+        .btn:active {
+            transform: translateY(0);
+        }
+
+
+        /* =========================
+           RESULTS
+        ========================= */
+
+        .results {
+            margin-top: 35px;
+
+            animation: slideIn 0.5s ease;
+        }
+
+
+        /* =========================
+           USER PROFILE
+        ========================= */
+
+        .user-profile {
+            background:
+                linear-gradient(
+                    135deg,
+                    #f8f9fa 0%,
+                    #e9ecef 100%
+                );
+
+            padding: 20px 25px;
+
+            border-radius: 12px;
+
+            margin-bottom: 25px;
+
+            border-left: 5px solid #764ba2;
+        }
+
+
+        .user-profile h3 {
+            color: #764ba2;
+
+            margin-bottom: 12px;
+
+            font-size: 1.4em;
+        }
+
+
+        .user-profile .details {
+            display: flex;
+
+            flex-wrap: wrap;
+
+            gap: 15px;
+        }
+
+
+        .user-profile .details p {
+            color: #555;
+
+            font-size: 0.95em;
+        }
+
+
+        .user-profile .details span {
+            font-weight: 600;
+
+            color: #333;
+        }
+
+
+        /* =========================
+           RECOMMENDATION HEADER
+        ========================= */
+
+        .recommendation-heading {
+            color: #764ba2;
+
+            margin-bottom: 15px;
+
+            font-size: 1.4em;
+        }
+
+
+        .recommendation-note {
+            color: #666;
+
+            margin-bottom: 20px;
+
+            font-size: 0.95em;
+        }
+
+
+        /* =========================
+           COURSE CARDS
+        ========================= */
+
+        .course-card {
+            background: #f8f9fa;
+
+            border-left: 5px solid #764ba2;
+
+            padding: 20px 22px;
+
+            margin-bottom: 18px;
+
+            border-radius: 12px;
+
+            transition: all 0.3s;
+        }
+
+
+        .course-card:hover {
+            transform: translateX(5px);
+
+            box-shadow:
+                0 8px 25px
+                rgba(0, 0, 0, 0.08);
+        }
+
+
+        /* =========================
+           CARD HEADER
+        ========================= */
+
+        .card-header {
+            display: flex;
+
+            justify-content: space-between;
+
+            align-items: center;
+
+            margin-bottom: 10px;
+
+            gap: 10px;
+        }
+
+
+        .course-card h4 {
+            color: #764ba2;
+
+            font-size: 1.25em;
+
+            font-weight: 700;
+        }
+
+
+        .match-type {
+            font-size: 0.8em;
+
+            padding: 5px 12px;
+
+            border-radius: 20px;
+
+            background: white;
+
+            color: #764ba2;
+
+            font-weight: 600;
+
+            white-space: nowrap;
+
+            border: 1px solid #ddd;
+        }
+
+
+        /* =========================
+           COURSE INFORMATION
+        ========================= */
+
+        .course-category {
+            color: #666;
+
+            font-size: 0.9em;
+
+            margin-bottom: 8px;
+        }
+
+
+        .course-description {
+            color: #555;
+
+            line-height: 1.6;
+
+            margin-bottom: 12px;
+        }
+
+
+        .course-meta {
+            display: flex;
+
+            flex-wrap: wrap;
+
+            gap: 10px;
+
+            margin-bottom: 12px;
+        }
+
+
+        .meta-badge {
+            background: white;
+
+            border: 1px solid #ddd;
+
+            padding: 5px 10px;
+
+            border-radius: 20px;
+
+            font-size: 0.85em;
+
+            color: #555;
+        }
+
+
+        .score {
+            font-weight: 700;
+
+            color: #764ba2;
+        }
+
+
+        /* =========================
+           REASONS
+        ========================= */
+
+        .reasons-title {
+            font-weight: 700;
+
+            color: #333;
+
+            margin-top: 10px;
+
+            margin-bottom: 5px;
+        }
+
+
+        .course-card ul {
+            list-style: none;
+
+            padding: 0;
+
+            margin-top: 5px;
+        }
+
+
+        .course-card ul li {
+            padding: 5px 0;
+
+            padding-left: 22px;
+
+            position: relative;
+
+            color: #555;
+
+            line-height: 1.4;
+        }
+
+
+        .course-card ul li::before {
+            content: "✓";
+
+            position: absolute;
+
+            left: 0;
+
+            color: #764ba2;
+
+            font-weight: bold;
+        }
+
+
+        /* =========================
+           NO RESULTS
+        ========================= */
+
+        .no-results {
+            text-align: center;
+
+            padding: 40px 20px;
+
+            color: #666;
+        }
+
+
+        .no-results .icon {
+            font-size: 3em;
+
+            margin-bottom: 10px;
+        }
+
+
+        /* =========================
+           FOOTER
+        ========================= */
+
+        .footer {
+            text-align: center;
+
+            margin-top: 30px;
+
+            padding-top: 20px;
+
+            border-top: 2px solid #f0f0f0;
+
+            color: #999;
+
+            font-size: 0.9em;
+        }
+
+
+        /* =========================
+           RESPONSIVE
+        ========================= */
+
+        @media (max-width: 600px) {
+
+            .container {
+                padding: 20px;
+            }
+
+
+            .header h1 {
+                font-size: 2em;
+            }
+
+
+            .card-header {
+                flex-direction: column;
+
+                align-items: flex-start;
+
+                gap: 7px;
+            }
+
+
+            .user-profile .details {
+                flex-direction: column;
+
+                gap: 7px;
+            }
+
+        }
+
+    </style>
+
+</head>
+
+
+<body>
+
+<div class="container">
+
+
+    <!-- =========================
+         HEADER
+    ========================= -->
+
+    <div class="header">
+
+        <h1>🎓 DigiBoost Institute</h1>
+
+        <p class="subtitle">
+            🤖 AI-Powered Course Recommendation System
+        </p>
+
+        <p class="tagline">
+            Transform your career with the right course
+        </p>
+
+    </div>
+
+
+    <!-- =========================
+         ERROR MESSAGE
+    ========================= -->
+
+    {% if error %}
+
+    <div class="error-message">
+
+        ⚠️ {{ error }}
+
+    </div>
+
+    {% endif %}
+
+
+    <!-- =========================
+         RECOMMENDATION FORM
+    ========================= -->
+
+    <form method="POST">
+
+
+        <!-- NAME -->
+
+        <div class="form-group">
+
+            <label for="name">
+                👤 Full Name
+            </label>
+
+            <input
+                type="text"
+                id="name"
+                name="name"
+                placeholder="Enter your full name"
+                value="{{ user.name if user else '' }}"
+                required
+            >
+
+        </div>
+
+
+        <!-- AGE -->
+
+        <div class="form-group">
+
+            <label for="age">
+                📅 Age
+            </label>
+
+            <input
+                type="number"
+                id="age"
+                name="age"
+                placeholder="Enter your age"
+                value="{{ user.age if user else '' }}"
+                required
+                min="10"
+                max="100"
+            >
+
+        </div>
+
+
+        <!-- QUALIFICATION -->
+
+        <div class="form-group">
+
+            <label for="qualification">
+                📚 Qualification
+            </label>
+
+            <select
+                id="qualification"
+                name="qualification"
+                required
+            >
+
+                <option value="">
+                    -- Select Qualification --
+                </option>
+
+
+                <option value="FSC"
+                    {% if user and user.qualification == "FSC" %}
+                    selected
+                    {% endif %}
+                >
+                    FSC
+                </option>
+
+
+                <option value="ICS"
+                    {% if user and user.qualification == "ICS" %}
+                    selected
+                    {% endif %}
+                >
+                    ICS
+                </option>
+
+
+                <option value="FCS"
+                    {% if user and user.qualification == "FCS" %}
+                    selected
+                    {% endif %}
+                >
+                    FCS
+                </option>
+
+
+                <option value="FA"
+                    {% if user and user.qualification == "FA" %}
+                    selected
+                    {% endif %}
+                >
+                    FA
+                </option>
+
+
+                <option value="BA"
+                    {% if user and user.qualification == "BA" %}
+                    selected
+                    {% endif %}
+                >
+                    BA
+                </option>
+
+
+                <option value="BBA"
+                    {% if user and user.qualification == "BBA" %}
+                    selected
+                    {% endif %}
+                >
+                    BBA
+                </option>
+
+
+                <option value="BS"
+                    {% if user and user.qualification == "BS" %}
+                    selected
+                    {% endif %}
+                >
+                    BS
+                </option>
+
+
+                <option value="BS_CS"
+                    {% if user and user.qualification == "BS_CS" %}
+                    selected
+                    {% endif %}
+                >
+                    BS Computer Science
+                </option>
+
+
+                <option value="BS_IT"
+                    {% if user and user.qualification == "BS_IT" %}
+                    selected
+                    {% endif %}
+                >
+                    BS Information Technology
+                </option>
+
+
+                <option value="BS_AI"
+                    {% if user and user.qualification == "BS_AI" %}
+                    selected
+                    {% endif %}
+                >
+                    BS Artificial Intelligence
+                </option>
+
+            </select>
+
+
+            <div class="hint">
+                💡 Select the qualification that matches your education.
+            </div>
+
+        </div>
+
+
+        <!-- INTERESTS -->
+
+        <div class="form-group">
+
+            <label for="interests">
+                💡 Interests
+            </label>
+
+            <input
+                type="text"
+                id="interests"
+                name="interests"
+                placeholder="e.g., coding, design, business, AI"
+                value="{{ user.interests | join(', ') if user else '' }}"
+                required
+            >
+
+            <div class="hint">
+
+                💡 Separate multiple interests with commas.
+
+                Example:
+                coding, AI, data science
+
+            </div>
+
+        </div>
+
+
+        <!-- SKILLS -->
+
+        <div class="form-group">
+
+            <label for="skills">
+                🛠️ Skills
+            </label>
+
+            <input
+                type="text"
+                id="skills"
+                name="skills"
+                placeholder="e.g., Python, Excel, SQL"
+                value="{{ user.skills | join(', ') if user else '' }}"
+            >
+
+            <div class="hint">
+
+                💡 Optional. Separate multiple skills with commas.
+
+                Example:
+                Python, Excel, SQL
+
+            </div>
+
+        </div>
+
+
+        <!-- CAREER GOAL -->
+
+        <div class="form-group">
+
+            <label for="career_goal">
+                🎯 Career Goal
+            </label>
+
+            <input
+                type="text"
+                id="career_goal"
+                name="career_goal"
+                placeholder="e.g., Data Analyst, AI Engineer"
+                value="{{ user.career_goal if user else '' }}"
+            >
+
+            <div class="hint">
+
+                💡 Optional. Enter the career you want to pursue.
+
+            </div>
+
+        </div>
+
+
+        <!-- EXPERIENCE -->
+
+        <div class="form-group">
+
+            <label for="experience">
+                📈 Experience Level
+            </label>
+
+            <select
+                id="experience"
+                name="experience"
+            >
+
+                <option value="">
+                    -- Select Experience --
+                </option>
+
+
+                <option value="Beginner"
+                    {% if user and user.experience == "Beginner" %}
+                    selected
+                    {% endif %}
+                >
+                    Beginner / No Experience
+                </option>
+
+
+                <option value="Intermediate"
+                    {% if user and user.experience == "Intermediate" %}
+                    selected
+                    {% endif %}
+                >
+                    Intermediate
+                </option>
+
+
+                <option value="Advanced"
+                    {% if user and user.experience == "Advanced" %}
+                    selected
+                    {% endif %}
+                >
+                    Advanced / Experienced
+                </option>
+
+            </select>
+
+        </div>
+
+
+        <!-- SUBMIT -->
+
+        <button
+            type="submit"
+            class="btn"
+        >
+            🚀 Get Recommendations
+        </button>
+
+    </form>
+
+
+    <!-- =========================
+         RESULTS
+    ========================= -->
+
+    {% if user %}
+
+    <div class="results">
+
+
+        <!-- USER PROFILE -->
+
+        <div class="user-profile">
+
+            <h3>
+                👋 Hi {{ user.name }}!
+            </h3>
+
+
+            <div class="details">
+
+                <p>
+                    📅
+                    <span>Age:</span>
+                    {{ user.age }} years
+                </p>
+
+
+                <p>
+                    📚
+                    <span>Qualification:</span>
+                    {{ user.qualification }}
+                </p>
+
+
+                <p>
+                    💡
+                    <span>Interests:</span>
+                    {{ user.interests | join(', ') }}
+                </p>
+
+
+                {% if user.skills %}
+
+                <p>
+                    🛠️
+                    <span>Skills:</span>
+                    {{ user.skills | join(', ') }}
+                </p>
+
+                {% endif %}
+
+
+                {% if user.career_goal %}
+
+                <p>
+                    🎯
+                    <span>Career Goal:</span>
+                    {{ user.career_goal }}
+                </p>
+
+                {% endif %}
+
+
+                {% if user.experience %}
+
+                <p>
+                    📈
+                    <span>Experience:</span>
+                    {{ user.experience }}
+                </p>
+
+                {% endif %}
+
+            </div>
+
+        </div>
+
+
+        <!-- RECOMMENDATION TITLE -->
+
+        <h3 class="recommendation-heading">
+            🎯 Recommended Courses
+        </h3>
+
+
+        <p class="recommendation-note">
+
+            Based on your qualification, interests, skills,
+            career goal and experience, these are your top
+            recommended courses.
+
+        </p>
+
+
+        <!-- RECOMMENDATIONS -->
+
+        {% if recommendations %}
+
+            {% for rec in recommendations %}
+
+            <div class="course-card">
+
+
+                <!-- COURSE HEADER -->
+
+                <div class="card-header">
+
+                    <h4>
+                        {{ rec.course }}
+                    </h4>
+
+
+                    <span class="match-type">
+
+                        {{ rec.match_type }}
+
+                    </span>
+
+                </div>
+
+
+                <!-- CATEGORY -->
+
+                <div class="course-category">
+
+                    📂
+                    <strong>Category:</strong>
+                    {{ rec.category }}
+
+                </div>
+
+
+                <!-- DESCRIPTION -->
+
+                <p class="course-description">
+
+                    {{ rec.description }}
+
+                </p>
+
+
+                <!-- COURSE META -->
+
+                <div class="course-meta">
+
+                    <span class="meta-badge">
+
+                        📊
+                        Match:
+                        <span class="score">
+                            {{ rec.match_percentage }}
+                        </span>
+
+                    </span>
+
+
+                    <span class="meta-badge">
+
+                        📈
+                        Level:
+                        {{ rec.level }}
+
+                    </span>
+
+                </div>
+
+
+                <!-- REASONS -->
+
+                {% if rec.reasons %}
+
+                <div class="reasons-title">
+
+                    Why this course?
+
+                </div>
+
+
+                <ul>
+
+                    {% for reason in rec.reasons %}
+
+                    <li>
+                        {{ reason }}
+                    </li>
+
+                    {% endfor %}
+
+                </ul>
+
+                {% endif %}
+
+
+            </div>
+
+            {% endfor %}
+
+
+        {% else %}
+
+            <div class="no-results">
+
+                <div class="icon">
+                    😕
+                </div>
+
+
+                <p>
+
+                    No recommendations found.
+
+                    Please try different
+                    qualifications or interests.
+
+                </p>
+
+            </div>
+
+        {% endif %}
+
+
+    </div>
+
+    {% endif %}
+
+
+    <!-- =========================
+         FOOTER
+    ========================= -->
+
+    <div class="footer">
+
+        <p>
+
+            © 2026 DigiBoost Institute of Technology |
+
+            AI-Powered Course Recommender
+
+        </p>
+
+    </div>
+
+
+</div>
+
+</body>
+
+</html>
