@@ -1,723 +1,215 @@
 """
 DIGIBOOST INSTITUTE OF TECHNOLOGY
-AI-Powered Course Recommendation Engine
-
-Recommendation factors:
-1. Qualification
-2. Interests
-3. Skills
-4. Career Goal
-5. Experience
-
-Weighted scoring system:
-Qualification = 25%
-Interests     = 30%
-Skills        = 20%
-Career Goal   = 20%
-Experience    = 5%
-
-Total = 100 points
+ML-Powered Course Recommendation Engine
+Uses trained Random Forest model to recommend Top 5 courses
 """
 
+import pandas as pd
+import numpy as np
+import joblib
+import os
 from courses import courses
 
-
 # =========================================================
-# QUALIFICATION NORMALIZATION
+# LOAD ML MODEL
 # =========================================================
 
-def normalize_qualification(qualification):
-    """
-    Converts different qualification formats
-    into one standard format.
-    """
+def load_ml_artifacts():
+    """Load all trained ML artifacts"""
+    try:
+        model = joblib.load('models/ml_recommender.pkl')
+        scaler = joblib.load('models/scaler.pkl')
+        le_qual = joblib.load('models/qual_encoder.pkl')
+        le_target = joblib.load('models/target_encoder.pkl')
+        mlb_interests = joblib.load('models/interests_mlb.pkl')
+        mlb_skills = joblib.load('models/skills_mlb.pkl')
+        feature_cols = joblib.load('models/feature_columns.pkl')
+        career_keywords = joblib.load('models/career_keywords.pkl')
+        interest_classes = joblib.load('models/interests_classes.pkl')
+        skill_classes = joblib.load('models/skills_classes.pkl')
+        
+        print("✅ ML Model loaded successfully!")
+        return model, scaler, le_qual, le_target, mlb_interests, mlb_skills, feature_cols, career_keywords, interest_classes, skill_classes
+    except Exception as e:
+        print(f"⚠️ Model not found: {e}")
+        print("   Falling back to rule-based recommender...")
+        return None, None, None, None, None, None, None, None, None, None
 
-    if not qualification:
-        return ""
-
-    q = str(qualification).strip().upper()
-
-    qualification_map = {
-
-        # FSC
-        "FSC": "FSC",
-        "F.SC": "FSC",
-        "F.SC.": "FSC",
-        "FCS": "FSC",
-
-        # ICS
-        "ICS": "ICS",
-        "I.C.S": "ICS",
-        "I.C.S.": "ICS",
-
-        # FA
-        "FA": "FA",
-        "F.A": "FA",
-        "F.A.": "FA",
-
-        # BA
-        "BA": "BA",
-        "B.A": "BA",
-        "B.A.": "BA",
-
-        # BBA
-        "BBA": "BBA",
-        "B.B.A": "BBA",
-        "B.B.A.": "BBA",
-
-        # BS
-        "BS": "BS",
-
-        # BS Computer Science
-        "BSCS": "BS_CS",
-        "BS CS": "BS_CS",
-        "BS-CS": "BS_CS",
-        "BS COMPUTER SCIENCE": "BS_CS",
-
-        # BS Information Technology
-        "BSIT": "BS_IT",
-        "BS IT": "BS_IT",
-        "BS-IT": "BS_IT",
-        "BS INFORMATION TECHNOLOGY": "BS_IT",
-
-        # BS Artificial Intelligence
-        "BSAI": "BS_AI",
-        "BS AI": "BS_AI",
-        "BS-AI": "BS_AI",
-        "BS ARTIFICIAL INTELLIGENCE": "BS_AI",
-    }
-
-    return qualification_map.get(q, q)
+# Load artifacts
+(model, scaler, le_qual, le_target, 
+ mlb_interests, mlb_skills, feature_cols, 
+ career_keywords, interest_classes, skill_classes) = load_ml_artifacts()
 
 
 # =========================================================
-# LIST / TEXT NORMALIZATION
+# HELPERS
 # =========================================================
 
 def normalize_list(items):
-    """
-    Converts input into a clean lowercase list.
-
-    Examples:
-
-    "Python, AI, Data"
-    ->
-    ["python", "ai", "data"]
-
-    ["Python", "AI"]
-    ->
-    ["python", "ai"]
-    """
-
-    if not items:
-        return []
-
-    if isinstance(items, str):
-        items = items.split(",")
-
-    return [
-        str(item).strip().lower()
-        for item in items
-        if str(item).strip()
-    ]
-
-
-# =========================================================
-# TEXT MATCHING HELPER
-# =========================================================
-
-def text_matches(user_text, course_text):
-    """
-    Checks whether two pieces of text are related.
-
-    Exact matching:
-        python == python
-
-    Partial matching:
-        python == python programming
-
-    Reverse partial matching:
-        data science == data
-    """
-
-    if not user_text or not course_text:
-        return False
-
-    user_text = str(user_text).strip().lower()
-    course_text = str(course_text).strip().lower()
-
-    return (
-        user_text == course_text
-        or user_text in course_text
-        or course_text in user_text
-    )
-
-
-# =========================================================
-# MATCH SCORE CALCULATION
-# =========================================================
-
-def calculate_match_score(
-    course,
-    qualification,
-    interests,
-    skills,
-    career_goal,
-    experience
-):
-    """
-    Calculates the match score for one course.
-
-    Maximum = 100 points.
-
-    Qualification = 25 points
-    Interests     = 30 points
-    Skills        = 20 points
-    Career Goal   = 20 points
-    Experience    = 5 points
-
-    Returns:
-        score, reasons
-    """
-
-    score = 0
-    reasons = []
-
-
-    # =====================================================
-    # 1. QUALIFICATION MATCH - 25 POINTS
-    # =====================================================
-
-    ideal_for = normalize_list(
-        course.get("ideal_for", [])
-    )
-
-    qualification_match = False
-
-    for ideal_qualification in ideal_for:
-
-        normalized_ideal = normalize_qualification(
-            ideal_qualification
-        )
-
-        if (
-            qualification == normalized_ideal
-            or normalized_ideal == "ALL"
-        ):
-            qualification_match = True
-            break
-
-
-    if qualification_match:
-
-        score += 25
-
-        reasons.append(
-            "Your qualification is suitable for this course."
-        )
-
-
-    # =====================================================
-    # 2. INTEREST MATCH - 30 POINTS
-    # =====================================================
-
-    course_tags = normalize_list(
-        course.get("tags", [])
-    )
-
-    interest_matches = []
-
-
-    for interest in interests:
-
-        for tag in course_tags:
-
-            if text_matches(
-                interest,
-                tag
-            ):
-
-                interest_matches.append(tag)
-
-                break
-
-
-    # Remove duplicates
-    interest_matches = list(
-        set(interest_matches)
-    )
-
-
-    if interest_matches:
-
-        # Maximum 30 points
-        interest_score = min(
-            30,
-            len(interest_matches) * 10
-        )
-
-        score += interest_score
-
-        reasons.append(
-            "Your interests match this course."
-        )
-
-
-    # =====================================================
-    # 3. SKILLS MATCH - 20 POINTS
-    # =====================================================
-
-    course_skills = normalize_list(
-        course.get("skills", [])
-    )
-
-    skill_matches = []
-
-
-    for skill in skills:
-
-        for course_skill in course_skills:
-
-            if text_matches(
-                skill,
-                course_skill
-            ):
-
-                skill_matches.append(
-                    course_skill
-                )
-
-                break
-
-
-    # Remove duplicates
-    skill_matches = list(
-        set(skill_matches)
-    )
-
-
-    if skill_matches:
-
-        skill_score = min(
-            20,
-            len(skill_matches) * 5
-        )
-
-        score += skill_score
-
-        reasons.append(
-            "Your skills are relevant to this course."
-        )
-
-
-    # =====================================================
-    # 4. CAREER GOAL MATCH - 20 POINTS
-    # =====================================================
-
-    career_goals = normalize_list(
-        course.get("career_goals", [])
-    )
-
-    career_match = False
-
-
-    if career_goal:
-
-        for goal in career_goals:
-
-            if text_matches(
-                career_goal,
-                goal
-            ):
-
-                career_match = True
-
-                break
-
-
-    if career_match:
-
-        score += 20
-
-        reasons.append(
-            "This course matches your career goal."
-        )
-
-
-    # =====================================================
-    # 5. EXPERIENCE MATCH - 5 POINTS
-    # =====================================================
-
-    level = str(
-        course.get("level", "")
-    ).strip().lower()
-
-    experience = str(
-        experience or ""
-    ).strip().lower()
-
-
-    if experience:
-
-        # Beginner
-        if experience in [
-            "beginner",
-            "no experience",
-            "none"
-        ]:
-
-            if level == "beginner":
-
-                score += 5
-
-                reasons.append(
-                    "This course is suitable "
-                    "for your beginner level."
-                )
-
-
-        # Intermediate
-        elif experience in [
-            "intermediate",
-            "some experience"
-        ]:
-
-            if level in [
-                "beginner",
-                "intermediate"
-            ]:
-
-                score += 5
-
-                reasons.append(
-                    "This course suits your "
-                    "current experience level."
-                )
-
-
-        # Advanced
-        elif experience in [
-            "advanced",
-            "experienced"
-        ]:
-
-            if level in [
-                "advanced",
-                "intermediate"
-            ]:
-
-                score += 5
-
-                reasons.append(
-                    "This course matches "
-                    "your experience level."
-                )
-
-
-    # =====================================================
-    # FINAL SCORE
-    # =====================================================
-
-    score = min(
-        100,
-        score
-    )
-
-
-    return score, reasons
-
-
-# =========================================================
-# MATCH TYPE
-# =========================================================
+    if not items: return []
+    if isinstance(items, str): items = items.split(",")
+    return [str(i).strip().lower() for i in items if str(i).strip()]
 
 def get_match_type(score):
-    """
-    Converts numeric score into
-    human-readable match category.
-    """
+    if score >= 80: return "🌟 EXCELLENT MATCH"
+    elif score >= 60: return "⭐ STRONG MATCH"
+    elif score >= 40: return "✅ GOOD MATCH"
+    elif score >= 20: return "💡 POSSIBLE MATCH"
+    else: return "📚 LOW MATCH"
 
-    if score >= 80:
-
-        return "🌟 EXCELLENT MATCH"
-
-    elif score >= 60:
-
-        return "⭐ STRONG MATCH"
-
-    elif score >= 40:
-
-        return "✅ GOOD MATCH"
-
-    elif score >= 20:
-
-        return "💡 POSSIBLE MATCH"
-
-    else:
-
-        return "📚 LOW MATCH"
-
+def get_reasons(course_name, interests, skills, career_goal):
+    reasons = []
+    course_data = courses.get(course_name, {})
+    
+    # Interest match
+    course_tags = [t.lower() for t in course_data.get('tags', [])]
+    for interest in interests[:3]:
+        if interest in ' '.join(course_tags):
+            reasons.append(f"💡 Aligns with your interest in '{interest}'")
+            break
+    
+    # Skill match
+    course_skills = [s.lower() for s in course_data.get('skills', [])]
+    for skill in skills[:3]:
+        if skill in ' '.join(course_skills):
+            reasons.append(f"🛠️ Relevant to your skill '{skill}'")
+            break
+    
+    # Career goal
+    if career_goal:
+        goals = [g.lower() for g in course_data.get('career_goals', [])]
+        if any(career_goal in g or g in career_goal for g in goals):
+            reasons.append(f"🎯 Matches your career goal '{career_goal}'")
+    
+    if not reasons:
+        reasons.append("📚 Good overall fit for your profile")
+    return reasons
 
 # =========================================================
-# MAIN RECOMMENDER
+# FALLBACK (Rule-based)
 # =========================================================
 
-def recommend_courses(
-    qualification,
-    interests,
-    skills=None,
-    career_goal="",
-    experience=""
-):
+def fallback_recommend(qualification, interests, skills, career_goal, experience):
+    # Simple fallback logic if ML fails
+    from courses import courses
+    scores = {}
+    for name, data in courses.items():
+        score = 0
+        if qualification in [q.upper() for q in data.get('ideal_for', [])]:
+            score += 30
+        for tag in data.get('tags', []):
+            if any(tag in i for i in [str(i).lower() for i in interests]):
+                score += 20
+                break
+        scores[name] = score
+    
+    sorted_courses = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:5]
+    results = []
+    for name, score in sorted_courses:
+        data = courses.get(name, {})
+        results.append({
+            'course': name,
+            'category': data.get('category', 'General'),
+            'description': data.get('description', ''),
+            'match_score': score,
+            'match_percentage': f"{score}%",
+            'match_type': get_match_type(score),
+            'reasons': ['✅ Based on your qualification and interests'],
+            'level': data.get('level', '')
+        })
+    return results
+
+# =========================================================
+# MAIN RECOMMEND FUNCTION
+# =========================================================
+
+def recommend_courses(qualification, interests, skills=None, career_goal="", experience=""):
     """
-    Generates ranked course recommendations.
-
-    Parameters
-    ----------
-    qualification : str
-        Example:
-        FSC
-        ICS
-        BS_CS
-        BS_IT
-
-    interests : list
-        Example:
-        ["python", "ai", "data"]
-
-    skills : list
-        Example:
-        ["python", "excel", "sql"]
-
-    career_goal : str
-        Example:
-        "Data Analyst"
-
-    experience : str
-        Example:
-        "Beginner"
-
-    Returns
-    -------
-    list
-        Top 5 ranked courses.
+    ML-powered recommendation - returns Top 5 courses
     """
+    # If model not loaded, use fallback
+    if model is None:
+        return fallback_recommend(qualification, interests, skills, career_goal, experience)
 
+    # Clean inputs
+    qual_clean = qualification.strip().upper()
+    interests = normalize_list(interests)
+    skills = normalize_list(skills) if skills else []
+    career_goal = str(career_goal or "").strip().lower()
+    experience = str(experience or "").strip().lower()
 
-    # =====================================================
-    # CLEAN INPUT
-    # =====================================================
+    # ---- 1. Qualification ----
+    qual_map = {
+        'FSC': 'FSC', 'ICS': 'ICS', 'FA': 'FA', 'BA': 'BA',
+        'BBA': 'BBA', 'BS': 'BS', 'BS_CS': 'BS_CS', 
+        'BS_IT': 'BS_IT', 'BS_AI': 'BS_AI', 'BS_SE': 'BS_SE'
+    }
+    try:
+        qual_enc = le_qual.transform([qual_map.get(qual_clean, 'General')])[0]
+    except:
+        qual_enc = 0
 
-    qualification = normalize_qualification(
-        qualification
-    )
+    # ---- 2. Experience ----
+    exp_enc = {'beginner': 0, 'intermediate': 1, 'advanced': 2}.get(experience, 0)
+    age = 22  # Default
 
-    interests = normalize_list(
-        interests
-    )
+    # ---- 3. Interests ----
+    try:
+        int_vec = mlb_interests.transform([interests])[0]
+    except:
+        int_vec = [0] * len(interest_classes)
+    int_dict = {f'int_{col}': int_vec[i] for i, col in enumerate(interest_classes)}
 
-    skills = normalize_list(
-        skills
-    )
+    # ---- 4. Skills ----
+    try:
+        sk_vec = mlb_skills.transform([skills])[0]
+    except:
+        sk_vec = [0] * len(skill_classes)
+    sk_dict = {f'skill_{col}': sk_vec[i] for i, col in enumerate(skill_classes)}
 
-    career_goal = str(
-        career_goal or ""
-    ).strip().lower()
+    # ---- 5. Career Keywords ----
+    career_dict = {f'career_{kw}': 1 if kw in career_goal else 0 for kw in career_keywords}
 
-    experience = str(
-        experience or ""
-    ).strip().lower()
+    # ---- 6. Combine ----
+    feature_dict = {
+        'age': age,
+        'qual_encoded': qual_enc,
+        'exp_encoded': exp_enc,
+        **int_dict,
+        **sk_dict,
+        **career_dict
+    }
 
+    feature_df = pd.DataFrame([feature_dict])
+    for col in feature_cols:
+        if col not in feature_df.columns:
+            feature_df[col] = 0
+    feature_df = feature_df[feature_cols]
 
-    # =====================================================
-    # DISPLAY PROFILE IN TERMINAL
-    # =====================================================
-
-    print("\n" + "=" * 60)
-
-    print(
-        "🔍 ANALYZING STUDENT PROFILE"
-    )
-
-    print("=" * 60)
-
-    print(
-        f"📚 Qualification : {qualification}"
-    )
-
-    print(
-        f"💡 Interests     : {interests}"
-    )
-
-    print(
-        f"🛠️ Skills        : {skills}"
-    )
-
-    print(
-        f"🎯 Career Goal   : {career_goal}"
-    )
-
-    print(
-        f"📈 Experience    : {experience}"
-    )
-
-
-    # =====================================================
-    # CHECK COURSE DATABASE
-    # =====================================================
-
-    if not isinstance(
-        courses,
-        dict
-    ):
-
-        raise TypeError(
-            "The 'courses' variable in courses.py "
-            "must be a dictionary."
-        )
-
-
-    # =====================================================
-    # CALCULATE EVERY COURSE
-    # =====================================================
-
+    # ---- 7. Predict ----
+    X_scaled = scaler.transform(feature_df)
+    
+    # Get probabilities for ALL courses
+    probs = model.predict_proba(X_scaled)[0]
+    
+    # Get top 5 indices
+    top_indices = np.argsort(probs)[::-1][:5]
+    
     recommendations = []
-
-
-    for course_name, course_data in courses.items():
-
-        # Safety check
-        if not isinstance(
-            course_data,
-            dict
-        ):
-            continue
-
-
-        # Calculate score
-        score, reasons = calculate_match_score(
-
-            course=course_data,
-
-            qualification=qualification,
-
-            interests=interests,
-
-            skills=skills,
-
-            career_goal=career_goal,
-
-            experience=experience
-        )
-
-
-        # Get match category
-        match_type = get_match_type(
-            score
-        )
-
-
-        # =================================================
-        # CREATE RECOMMENDATION
-        # =================================================
-
-        recommendation = {
-
-            "course": course_name,
-
-            "category": course_data.get(
-                "category",
-                "General"
-            ),
-
-            "description": course_data.get(
-                "description",
-                "No description available."
-            ),
-
-            "match_score": score,
-
-            "match_percentage": f"{score}%",
-
-            "match_type": match_type,
-
-            "reasons": reasons,
-
-            "level": course_data.get(
-                "level",
-                "Not specified"
-            )
-        }
-
-
-        recommendations.append(
-            recommendation
-        )
-
-
-    # =====================================================
-    # SORT BY SCORE
-    # =====================================================
-
-    recommendations.sort(
-
-        key=lambda item:
-            item["match_score"],
-
-        reverse=True
-    )
-
-
-    # =====================================================
-    # TOP 5
-    # =====================================================
-
-    recommendations = recommendations[:5]
-
-
-    # =====================================================
-    # DISPLAY RESULTS
-    # =====================================================
-
-    print("\n" + "=" * 60)
-
-    print(
-        "🎯 TOP COURSE RECOMMENDATIONS"
-    )
-
-    print("=" * 60)
-
-
-    if not recommendations:
-
-        print(
-            "❌ No courses available."
-        )
-
-
-    else:
-
-        for index, recommendation in enumerate(
-            recommendations,
-            start=1
-        ):
-
-            print(
-
-                f"{index}. "
-                f"{recommendation['course']} "
-                f"→ "
-                f"{recommendation['match_percentage']} "
-                f"| "
-                f"{recommendation['match_type']}"
-            )
-
-
-    print("=" * 60 + "\n")
-
-
-    # =====================================================
-    # RETURN RESULTS
-    # =====================================================
-
+    for idx in top_indices:
+        course_name = le_target.inverse_transform([idx])[0]
+        confidence = probs[idx] * 100
+        data = courses.get(course_name, {})
+        
+        recommendations.append({
+            'course': course_name,
+            'category': data.get('category', 'General'),
+            'description': data.get('description', 'No description available.'),
+            'match_score': confidence,
+            'match_percentage': f"{confidence:.1f}%",
+            'match_type': get_match_type(confidence),
+            'reasons': get_reasons(course_name, interests, skills, career_goal),
+            'level': data.get('level', 'Not specified')
+        })
+    
     return recommendations
