@@ -1,40 +1,27 @@
-"""
-ML Trainer
-AI Resume Tailoring System
-
-Trains multiple Machine Learning models:
-1. XGBoost
-2. Random Forest
-3. Decision Tree
-4. Logistic Regression
-
-The models learn resume-job matching patterns from
-engineered numerical features.
-"""
-
 import os
 import pickle
 import numpy as np
-import pandas as pd
 
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.tree import DecisionTreeRegressor
-from sklearn.linear_model import LogisticRegression
+from sklearn.pipeline import Pipeline
 from sklearn.metrics import (
-    mean_absolute_error,
-    mean_squared_error,
-    r2_score,
-    accuracy_score
+    accuracy_score,
+    precision_score,
+    recall_score,
+    f1_score,
+    classification_report
 )
+from sklearn.linear_model import LogisticRegression
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.ensemble import RandomForestClassifier
 
-from xgboost import XGBRegressor
+from xgboost import XGBClassifier
 
 
-# ============================================================
+# ---------------------------------------------------------
 # PATHS
-# ============================================================
+# ---------------------------------------------------------
 
 BASE_DIR = os.path.dirname(
     os.path.dirname(os.path.abspath(__file__))
@@ -45,264 +32,232 @@ MODEL_DIR = os.path.join(
     "models"
 )
 
-os.makedirs(
-    MODEL_DIR,
-    exist_ok=True
-)
+os.makedirs(MODEL_DIR, exist_ok=True)
 
 
-# ============================================================
-# IMPORT FEATURE ENGINEERING
-# ============================================================
+# ---------------------------------------------------------
+# FEATURE NAMES
+# ---------------------------------------------------------
 
-from modules.ml_feature_engineering import (
-    create_features
-)
+FEATURE_NAMES = [
+    "skill_match",
+    "semantic_similarity",
+    "keyword_overlap",
+    "experience_match",
+    "education_match",
+    "resume_length",
+    "jd_length"
+]
 
 
-# ============================================================
-# LOAD DATA
-# ============================================================
+# ---------------------------------------------------------
+# CREATE SYNTHETIC TRAINING DATA
+# ---------------------------------------------------------
 
-def load_data():
+def create_training_data(n_samples=3000, random_state=42):
 
-    resume_path = os.path.join(
-        BASE_DIR,
-        "data",
-        "processed",
-        "resumes_clean.csv"
+    rng = np.random.RandomState(random_state)
+
+    X = rng.uniform(
+        low=0.0,
+        high=1.0,
+        size=(n_samples, 7)
     )
 
-    jobs_path = os.path.join(
-        BASE_DIR,
-        "data",
-        "processed",
-        "jobs_clean.csv"
+    # Feature weights
+    weights = np.array([
+        0.35,   # skill match
+        0.30,   # semantic similarity
+        0.15,   # keyword overlap
+        0.10,   # experience
+        0.10,   # education
+        0.00,   # resume length
+        0.00    # JD length
+    ])
+
+    scores = np.dot(X, weights)
+
+    # Add small noise
+    noise = rng.normal(
+        loc=0.0,
+        scale=0.04,
+        size=n_samples
     )
 
-    print("=" * 60)
-    print("LOADING DATA")
-    print("=" * 60)
+    scores = scores + noise
 
-    print("\nResume dataset:")
-    print(resume_path)
-
-    print("\nJob dataset:")
-    print(jobs_path)
-
-    resumes = pd.read_csv(
-        resume_path
-    )
-
-    jobs = pd.read_csv(
-        jobs_path
-    )
-
-    print("\nResume shape:", resumes.shape)
-    print("Job shape:", jobs.shape)
-
-    return resumes, jobs
-
-
-# ============================================================
-# PREPARE TRAINING DATA
-# ============================================================
-
-def prepare_training_data():
-
-    resumes, jobs = load_data()
-
-    print("\n" + "=" * 60)
-    print("CREATING ML TRAINING FEATURES")
-    print("=" * 60)
-
-    # --------------------------------------------------------
-    # Find resume text column
-    # --------------------------------------------------------
-
-    resume_column = None
-
-    possible_resume_columns = [
-        "Resume_str",
-        "resume",
-        "resume_text",
-        "text",
-        "clean_resume"
-    ]
-
-    for column in possible_resume_columns:
-
-        if column in resumes.columns:
-            resume_column = column
-            break
-
-    if resume_column is None:
-
-        raise ValueError(
-            "Resume text column not found."
-        )
-
-    # --------------------------------------------------------
-    # Find job description column
-    # --------------------------------------------------------
-
-    jd_column = None
-
-    possible_jd_columns = [
-        "Job Description",
-        "job_description",
-        "description",
-        "job_description_text"
-    ]
-
-    for column in possible_jd_columns:
-
-        if column in jobs.columns:
-            jd_column = column
-            break
-
-    if jd_column is None:
-
-        raise ValueError(
-            "Job description column not found."
-        )
-
-    print(
-        "\nResume column:",
-        resume_column
-    )
-
-    print(
-        "Job description column:",
-        jd_column
-    )
-
-    # --------------------------------------------------------
-    # Limit dataset for initial training
-    # --------------------------------------------------------
-
-    resumes = resumes.dropna(
-        subset=[resume_column]
-    )
-
-    jobs = jobs.dropna(
-        subset=[jd_column]
-    )
-
-    # --------------------------------------------------------
-    # Create training pairs
-    #
-    # We create positive pairs from resume/JD samples.
-    # Negative pairs are created by shuffling JDs.
-    # --------------------------------------------------------
-
-    n = min(
-        len(resumes),
-        len(jobs)
-    )
-
-    resumes = resumes.head(n).reset_index(
-        drop=True
-    )
-
-    jobs = jobs.head(n).reset_index(
-        drop=True
-    )
-
-    positive_resumes = resumes[
-        resume_column
-    ].astype(str).tolist()
-
-    positive_jobs = jobs[
-        jd_column
-    ].astype(str).tolist()
-
-    print(
-        "\nPositive pairs:",
-        len(positive_resumes)
-    )
-
-    # --------------------------------------------------------
-    # Positive examples
-    # --------------------------------------------------------
-
-    X_positive = create_features(
-        positive_resumes,
-        positive_jobs
-    )
-
-    y_positive = np.ones(
-        len(X_positive)
-    )
-
-    # --------------------------------------------------------
-    # Negative examples
-    # --------------------------------------------------------
-
-    shuffled_jobs = jobs[
-        jd_column
-    ].sample(
-        frac=1,
-        random_state=42
-    ).reset_index(
-        drop=True
-    )
-
-    negative_jobs = shuffled_jobs.astype(
-        str
-    ).tolist()
-
-    X_negative = create_features(
-        positive_resumes,
-        negative_jobs
-    )
-
-    y_negative = np.zeros(
-        len(X_negative)
-    )
-
-    # --------------------------------------------------------
-    # Combine
-    # --------------------------------------------------------
-
-    X = np.vstack(
-        [
-            X_positive,
-            X_negative
-        ]
-    )
-
-    y = np.concatenate(
-        [
-            y_positive,
-            y_negative
-        ]
-    )
-
-    print(
-        "\nFinal feature matrix:",
-        X.shape
-    )
-
-    print(
-        "Labels:",
-        y.shape
-    )
+    y = (scores >= 0.50).astype(int)
 
     return X, y
 
 
-# ============================================================
-# TRAIN MODELS
-# ============================================================
+# ---------------------------------------------------------
+# CREATE MODELS
+# ---------------------------------------------------------
 
-def train_models():
+def create_models():
 
-    X, y = prepare_training_data()
+    models = {
 
-    print("\n" + "=" * 60)
-    print("TRAIN / TEST SPLIT")
-    print("=" * 60)
+        "Logistic Regression": Pipeline([
+            (
+                "scaler",
+                StandardScaler()
+            ),
+            (
+                "model",
+                LogisticRegression(
+                    max_iter=2000,
+                    random_state=42
+                )
+            )
+        ]),
+
+        "Decision Tree": DecisionTreeClassifier(
+            max_depth=6,
+            min_samples_split=10,
+            min_samples_leaf=5,
+            random_state=42
+        ),
+
+        "Random Forest": RandomForestClassifier(
+            n_estimators=200,
+            max_depth=8,
+            min_samples_split=5,
+            min_samples_leaf=2,
+            random_state=42,
+            n_jobs=-1
+        ),
+
+        "XGBoost": XGBClassifier(
+            n_estimators=200,
+            max_depth=5,
+            learning_rate=0.05,
+            subsample=0.85,
+            colsample_bytree=0.85,
+            objective="binary:logistic",
+            eval_metric="logloss",
+            random_state=42,
+            n_jobs=4
+        )
+    }
+
+    return models
+
+
+# ---------------------------------------------------------
+# EVALUATE MODEL
+# ---------------------------------------------------------
+
+def evaluate_model(model, X_train, X_test, y_train, y_test):
+
+    model.fit(
+        X_train,
+        y_train
+    )
+
+    predictions = model.predict(
+        X_test
+    )
+
+    accuracy = accuracy_score(
+        y_test,
+        predictions
+    )
+
+    precision = precision_score(
+        y_test,
+        predictions,
+        zero_division=0
+    )
+
+    recall = recall_score(
+        y_test,
+        predictions,
+        zero_division=0
+    )
+
+    f1 = f1_score(
+        y_test,
+        predictions,
+        zero_division=0
+    )
+
+    return {
+        "model": model,
+        "accuracy": accuracy,
+        "precision": precision,
+        "recall": recall,
+        "f1": f1,
+        "predictions": predictions
+    }
+
+
+# ---------------------------------------------------------
+# SAVE MODEL
+# ---------------------------------------------------------
+
+def save_model(model, model_name):
+
+    safe_name = (
+        model_name
+        .lower()
+        .replace(" ", "_")
+    )
+
+    path = os.path.join(
+        MODEL_DIR,
+        f"{safe_name}.pkl"
+    )
+
+    with open(
+        path,
+        "wb"
+    ) as file:
+
+        pickle.dump(
+            model,
+            file
+        )
+
+    return path
+
+
+# ---------------------------------------------------------
+# TRAIN ALL MODELS
+# ---------------------------------------------------------
+
+def train_all_models():
+
+    print("=" * 70)
+    print("AI RESUME TAILORING - ML MODEL TRAINING")
+    print("=" * 70)
+
+    print("\nCreating training dataset...")
+
+    X, y = create_training_data(
+        n_samples=3000
+    )
+
+    print(
+        f"Training samples: {len(X)}"
+    )
+
+    print(
+        f"Features: {X.shape[1]}"
+    )
+
+    print(
+        f"Positive matches: {sum(y)}"
+    )
+
+    print(
+        f"Negative matches: {len(y) - sum(y)}"
+    )
+
+    # -----------------------------------------------------
+    # TRAIN / TEST SPLIT
+    # -----------------------------------------------------
 
     X_train, X_test, y_train, y_test = train_test_split(
         X,
@@ -312,420 +267,235 @@ def train_models():
         stratify=y
     )
 
-    # --------------------------------------------------------
-    # Scaling
-    # --------------------------------------------------------
-
-    scaler = StandardScaler()
-
-    X_train_scaled = scaler.fit_transform(
-        X_train
+    print(
+        f"\nTraining set: {len(X_train)}"
     )
 
-    X_test_scaled = scaler.transform(
-        X_test
+    print(
+        f"Testing set: {len(X_test)}"
     )
 
-    # ========================================================
-    # XGBOOST
-    # ========================================================
+    # -----------------------------------------------------
+    # MODELS
+    # -----------------------------------------------------
 
-    print("\nTraining XGBoost...")
+    models = create_models()
 
-    xgb_model = XGBRegressor(
-        n_estimators=200,
-        max_depth=6,
-        learning_rate=0.05,
-        subsample=0.8,
-        colsample_bytree=0.8,
-        objective="reg:squarederror",
-        random_state=42,
-        n_jobs=-1
-    )
+    results = {}
 
-    xgb_model.fit(
-        X_train,
-        y_train
-    )
+    best_model = None
+    best_model_name = None
+    best_accuracy = -1
 
-    xgb_pred = xgb_model.predict(
-        X_test
-    )
+    # -----------------------------------------------------
+    # TRAIN
+    # -----------------------------------------------------
 
-    # ========================================================
-    # RANDOM FOREST
-    # ========================================================
+    for model_name, model in models.items():
 
-    print("Training Random Forest...")
-
-    rf_model = RandomForestRegressor(
-        n_estimators=200,
-        max_depth=12,
-        random_state=42,
-        n_jobs=-1
-    )
-
-    rf_model.fit(
-        X_train,
-        y_train
-    )
-
-    rf_pred = rf_model.predict(
-        X_test
-    )
-
-    # ========================================================
-    # DECISION TREE
-    # ========================================================
-
-    print("Training Decision Tree...")
-
-    dt_model = DecisionTreeRegressor(
-        max_depth=10,
-        random_state=42
-    )
-
-    dt_model.fit(
-        X_train,
-        y_train
-    )
-
-    dt_pred = dt_model.predict(
-        X_test
-    )
-
-    # ========================================================
-    # LOGISTIC REGRESSION
-    # ========================================================
-
-    print("Training Logistic Regression...")
-
-    logistic_model = LogisticRegression(
-        max_iter=1000,
-        random_state=42
-    )
-
-    logistic_model.fit(
-        X_train_scaled,
-        y_train.astype(int)
-    )
-
-    logistic_pred = logistic_model.predict(
-        X_test_scaled
-    )
-
-    # ========================================================
-    # EVALUATION
-    # ========================================================
-
-    print("\n" + "=" * 60)
-    print("MODEL PERFORMANCE")
-    print("=" * 60)
-
-    # --------------------------------------------------------
-    # XGBoost
-    # --------------------------------------------------------
-
-    xgb_mae = mean_absolute_error(
-        y_test,
-        xgb_pred
-    )
-
-    xgb_rmse = np.sqrt(
-        mean_squared_error(
-            y_test,
-            xgb_pred
+        print("\n" + "-" * 70)
+        print(
+            f"Training: {model_name}"
         )
-    )
+        print("-" * 70)
 
-    xgb_r2 = r2_score(
-        y_test,
-        xgb_pred
-    )
+        try:
 
-    print("\nXGBoost")
-    print(
-        "MAE :",
-        round(xgb_mae, 4)
-    )
-    print(
-        "RMSE:",
-        round(xgb_rmse, 4)
-    )
-    print(
-        "R2  :",
-        round(xgb_r2, 4)
-    )
+            result = evaluate_model(
+                model,
+                X_train,
+                X_test,
+                y_train,
+                y_test
+            )
 
-    # --------------------------------------------------------
-    # Random Forest
-    # --------------------------------------------------------
+            results[model_name] = result
 
-    rf_mae = mean_absolute_error(
-        y_test,
-        rf_pred
-    )
+            print(
+                f"Accuracy : {result['accuracy']:.4f}"
+            )
 
-    rf_rmse = np.sqrt(
-        mean_squared_error(
-            y_test,
-            rf_pred
+            print(
+                f"Precision: {result['precision']:.4f}"
+            )
+
+            print(
+                f"Recall   : {result['recall']:.4f}"
+            )
+
+            print(
+                f"F1 Score : {result['f1']:.4f}"
+            )
+
+            if result["accuracy"] > best_accuracy:
+
+                best_accuracy = result["accuracy"]
+
+                best_model = result["model"]
+
+                best_model_name = model_name
+
+        except Exception as error:
+
+            print(
+                f"ERROR training {model_name}:"
+            )
+
+            print(error)
+
+    # -----------------------------------------------------
+    # SAVE INDIVIDUAL MODELS
+    # -----------------------------------------------------
+
+    print("\n" + "=" * 70)
+    print("SAVING MODELS")
+    print("=" * 70)
+
+    for model_name, result in results.items():
+
+        path = save_model(
+            result["model"],
+            model_name
         )
-    )
 
-    rf_r2 = r2_score(
-        y_test,
-        rf_pred
-    )
-
-    print("\nRandom Forest")
-    print(
-        "MAE :",
-        round(rf_mae, 4)
-    )
-    print(
-        "RMSE:",
-        round(rf_rmse, 4)
-    )
-    print(
-        "R2  :",
-        round(rf_r2, 4)
-    )
-
-    # --------------------------------------------------------
-    # Decision Tree
-    # --------------------------------------------------------
-
-    dt_mae = mean_absolute_error(
-        y_test,
-        dt_pred
-    )
-
-    dt_rmse = np.sqrt(
-        mean_squared_error(
-            y_test,
-            dt_pred
+        print(
+            f"{model_name}: {path}"
         )
+
+    # -----------------------------------------------------
+    # SAVE BEST MODEL
+    # -----------------------------------------------------
+
+    best_model_path = os.path.join(
+        MODEL_DIR,
+        "best_resume_match_model.pkl"
     )
-
-    dt_r2 = r2_score(
-        y_test,
-        dt_pred
-    )
-
-    print("\nDecision Tree")
-    print(
-        "MAE :",
-        round(dt_mae, 4)
-    )
-    print(
-        "RMSE:",
-        round(dt_rmse, 4)
-    )
-    print(
-        "R2  :",
-        round(dt_r2, 4)
-    )
-
-    # --------------------------------------------------------
-    # Logistic Regression
-    # --------------------------------------------------------
-
-    logistic_accuracy = accuracy_score(
-        y_test,
-        logistic_pred
-    )
-
-    print("\nLogistic Regression")
-
-    print(
-        "Accuracy:",
-        round(
-            logistic_accuracy * 100,
-            2
-        ),
-        "%"
-    )
-
-    # ========================================================
-    # ENSEMBLE
-    # ========================================================
-
-    ensemble_prediction = (
-        (xgb_pred * 0.50)
-        +
-        (rf_pred * 0.35)
-        +
-        (dt_pred * 0.15)
-    )
-
-    ensemble_mae = mean_absolute_error(
-        y_test,
-        ensemble_prediction
-    )
-
-    ensemble_rmse = np.sqrt(
-        mean_squared_error(
-            y_test,
-            ensemble_prediction
-        )
-    )
-
-    ensemble_r2 = r2_score(
-        y_test,
-        ensemble_prediction
-    )
-
-    print("\n" + "=" * 60)
-    print("ENSEMBLE MODEL")
-    print("=" * 60)
-
-    print(
-        "\nXGBoost Weight      : 50%"
-    )
-
-    print(
-        "Random Forest Weight: 35%"
-    )
-
-    print(
-        "Decision Tree Weight: 15%"
-    )
-
-    print(
-        "\nEnsemble MAE :",
-        round(
-            ensemble_mae,
-            4
-        )
-    )
-
-    print(
-        "Ensemble RMSE:",
-        round(
-            ensemble_rmse,
-            4
-        )
-    )
-
-    print(
-        "Ensemble R2  :",
-        round(
-            ensemble_r2,
-            4
-        )
-    )
-
-    # ========================================================
-    # SAVE MODELS
-    # ========================================================
-
-    print("\n" + "=" * 60)
-    print("SAVING TRAINED MODELS")
-    print("=" * 60)
 
     with open(
-        os.path.join(
-            MODEL_DIR,
-            "resume_jd_xgboost.pkl"
-        ),
+        best_model_path,
         "wb"
     ) as file:
 
         pickle.dump(
-            xgb_model,
+            best_model,
             file
         )
 
+    # -----------------------------------------------------
+    # SAVE FEATURE INFORMATION
+    # -----------------------------------------------------
+
+    feature_info_path = os.path.join(
+        MODEL_DIR,
+        "feature_names.pkl"
+    )
+
     with open(
-        os.path.join(
-            MODEL_DIR,
-            "resume_jd_random_forest.pkl"
-        ),
+        feature_info_path,
         "wb"
     ) as file:
 
         pickle.dump(
-            rf_model,
+            FEATURE_NAMES,
             file
+        )
+
+    # -----------------------------------------------------
+    # FINAL RESULT
+    # -----------------------------------------------------
+
+    print("\n" + "=" * 70)
+    print("BEST MODEL")
+    print("=" * 70)
+
+    print(
+        f"Model    : {best_model_name}"
+    )
+
+    print(
+        f"Accuracy : {best_accuracy:.4f}"
+    )
+
+    print(
+        f"Saved to : {best_model_path}"
+    )
+
+    print("\n" + "=" * 70)
+    print("MODEL TRAINING COMPLETED")
+    print("=" * 70)
+
+    return {
+        "models": results,
+        "best_model": best_model,
+        "best_model_name": best_model_name,
+        "best_accuracy": best_accuracy
+    }
+
+
+# ---------------------------------------------------------
+# PREDICT MATCH
+# ---------------------------------------------------------
+
+def predict_match(features):
+
+    model_path = os.path.join(
+        MODEL_DIR,
+        "best_resume_match_model.pkl"
+    )
+
+    if not os.path.exists(model_path):
+
+        raise FileNotFoundError(
+            "Trained model not found. "
+            "Run ml_trainer.py first."
         )
 
     with open(
-        os.path.join(
-            MODEL_DIR,
-            "resume_jd_decision_tree.pkl"
-        ),
-        "wb"
+        model_path,
+        "rb"
     ) as file:
 
-        pickle.dump(
-            dt_model,
+        model = pickle.load(
             file
         )
 
-    with open(
-        os.path.join(
-            MODEL_DIR,
-            "resume_jd_logistic_regression.pkl"
-        ),
-        "wb"
-    ) as file:
+    values = [
+        float(features.get(name, 0.0))
+        for name in FEATURE_NAMES
+    ]
 
-        pickle.dump(
-            logistic_model,
-            file
+    X = np.array(
+        values,
+        dtype=float
+    ).reshape(1, -1)
+
+    prediction = model.predict(X)[0]
+
+    if hasattr(
+        model,
+        "predict_proba"
+    ):
+
+        probability = model.predict_proba(
+            X
+        )[0][1]
+
+    else:
+
+        probability = float(
+            prediction
         )
 
-    with open(
-        os.path.join(
-            MODEL_DIR,
-            "feature_scaler.pkl"
-        ),
-        "wb"
-    ) as file:
-
-        pickle.dump(
-            scaler,
-            file
-        )
-
-    print("\nModels saved in:")
-
-    print(
-        MODEL_DIR
-    )
-
-    print("\nCreated files:")
-
-    print(
-        "✓ resume_jd_xgboost.pkl"
-    )
-
-    print(
-        "✓ resume_jd_random_forest.pkl"
-    )
-
-    print(
-        "✓ resume_jd_decision_tree.pkl"
-    )
-
-    print(
-        "✓ resume_jd_logistic_regression.pkl"
-    )
-
-    print(
-        "✓ feature_scaler.pkl"
-    )
-
-    print("\n" + "=" * 60)
-    print("ML TRAINING COMPLETED")
-    print("=" * 60)
+    return {
+        "prediction": int(prediction),
+        "probability": float(probability)
+    }
 
 
-# ============================================================
+# ---------------------------------------------------------
 # MAIN
-# ============================================================
+# ---------------------------------------------------------
 
 if __name__ == "__main__":
 
-    train_models()
+    train_all_models()
