@@ -1,46 +1,23 @@
+"""
+AI Resume Tailoring System – Complete Standalone App
+PDF is generated automatically after analysis.
+"""
+
 import os
 import sys
 import tempfile
+import re
 from pathlib import Path
-
 import streamlit as st
+from datetime import datetime
 
 # ============================================================
-# PROJECT PATH
+# PROJECT CONFIGURATION
 # ============================================================
 
 BASE_DIR = Path(__file__).resolve().parent
-
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
-
-
-# ============================================================
-# IMPORT EXISTING MODULES
-# ============================================================
-
-from modules.resume_parser import ResumeParser
-from modules.jd_analyzer import JDAnalyzer
-from modules.skill_extractor import extract_skills
-from modules.matcher import ResumeJobMatcher
-from modules.gap_analyzer import GapAnalyzer
-from modules.resume_tailor import ResumeTailor
-
-
-# ============================================================
-# OPTIONAL GENERATORS
-# ============================================================
-
-try:
-    from modules.resume_generator import ResumeGenerator
-except Exception:
-    ResumeGenerator = None
-
-try:
-    from modules.pdf_generator import PDFGenerator
-except Exception:
-    PDFGenerator = None
-
 
 # ============================================================
 # PAGE CONFIG
@@ -48,1043 +25,786 @@ except Exception:
 
 st.set_page_config(
     page_title="AI Resume Tailoring System",
-    page_icon="📄",
-    layout="wide"
+    page_icon="🤖",
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
 
+# ============================================================
+# MODULE IMPORTS
+# ============================================================
+
+try:
+    from modules.resume_parser import ResumeParser
+except Exception as e:
+    st.error(f"❌ ResumeParser import failed: {e}")
+    st.stop()
+
+try:
+    from modules.jd_analyzer import JDAnalyzer
+except Exception as e:
+    st.error(f"❌ JDAnalyzer import failed: {e}")
+    st.stop()
+
+try:
+    from modules.skill_extractor import extract_skills, compare_skills
+except Exception as e:
+    st.error(f"❌ Skill extractor import failed: {e}")
+    st.stop()
+
+try:
+    from modules.matcher import ResumeJobMatcher
+except Exception as e:
+    st.error(f"❌ Matcher import failed: {e}")
+    st.stop()
+
+try:
+    from modules.resume_tailor import ResumeTailor
+except Exception as e:
+    st.error(f"❌ ResumeTailor import failed: {e}")
+    st.stop()
+
+try:
+    from modules.gap_analyzer import GapAnalyzer
+except Exception:
+    GapAnalyzer = None
 
 # ============================================================
-# CUSTOM CSS
+# PDF GENERATION (built-in)
 # ============================================================
 
-st.markdown(
-    """
+try:
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import mm
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, HRFlowable, ListFlowable, ListItem
+    from reportlab.lib.enums import TA_CENTER, TA_LEFT
+    from reportlab.lib import colors
+    REPORTLAB_AVAILABLE = True
+except ImportError:
+    REPORTLAB_AVAILABLE = False
+
+def generate_pdf_resume(resume_data, job_title, output_path=None):
+    """Generate a professional PDF resume using reportlab."""
+    if not REPORTLAB_AVAILABLE:
+        raise ImportError("reportlab is required. Run: pip install reportlab")
+
+    if output_path is None:
+        output_path = Path("output/Tailored_Resume.pdf")
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    doc = SimpleDocTemplate(
+        str(output_path),
+        pagesize=A4,
+        rightMargin=17*mm,
+        leftMargin=17*mm,
+        topMargin=13*mm,
+        bottomMargin=14*mm,
+    )
+
+    styles = getSampleStyleSheet()
+    styles.add(ParagraphStyle(
+        name='ResumeName',
+        parent=styles['Title'],
+        fontSize=22,
+        leading=26,
+        alignment=TA_CENTER,
+        spaceAfter=3,
+        textColor=colors.black
+    ))
+    styles.add(ParagraphStyle(
+        name='ResumeTitle',
+        parent=styles['Normal'],
+        fontSize=11,
+        leading=14,
+        alignment=TA_CENTER,
+        spaceAfter=5,
+        textColor=colors.black
+    ))
+    styles.add(ParagraphStyle(
+        name='ContactLine',
+        parent=styles['Normal'],
+        fontSize=8.5,
+        leading=11,
+        alignment=TA_CENTER,
+        spaceAfter=2,
+        textColor=colors.black
+    ))
+    styles.add(ParagraphStyle(
+        name='SectionHeading',
+        parent=styles['Heading2'],
+        fontSize=11,
+        leading=14,
+        alignment=TA_LEFT,
+        spaceBefore=10,
+        spaceAfter=3,
+        textColor=colors.black,
+        keepWithNext=True,
+        fontName='Helvetica-Bold'
+    ))
+    styles.add(ParagraphStyle(
+        name='BodyResume',
+        parent=styles['BodyText'],
+        fontSize=9,
+        leading=12,
+        alignment=TA_LEFT,
+        spaceAfter=3
+    ))
+    styles.add(ParagraphStyle(
+        name='BulletResume',
+        parent=styles['BodyText'],
+        fontSize=9,
+        leading=12,
+        alignment=TA_LEFT,
+        leftIndent=12,
+        firstLineIndent=0,
+        spaceAfter=2
+    ))
+
+    story = []
+
+    # ---- NAME ----
+    name = resume_data.get('name', 'Candidate')
+    story.append(Paragraph(name, styles['ResumeName']))
+
+    # ---- JOB TITLE ----
+    if job_title:
+        story.append(Paragraph(job_title, styles['ResumeTitle']))
+
+    # ---- CONTACT BLOCK ----
+    # Line 1: Phone | Email
+    contact_parts = []
+    phone = resume_data.get('phone', '')
+    email = resume_data.get('email', '')
+    if phone:
+        contact_parts.append(phone)
+    if email:
+        contact_parts.append(email)
+    if contact_parts:
+        story.append(Paragraph(' | '.join(contact_parts), styles['ContactLine']))
+
+    # Line 2: Location
+    location = resume_data.get('location', '')
+    if location:
+        story.append(Paragraph(location, styles['ContactLine']))
+
+    # Line 3: Social links with labels
+    social_parts = []
+    linkedin = resume_data.get('linkedin', '')
+    github = resume_data.get('github', '')
+    kaggle = resume_data.get('kaggle', '')
+    if linkedin:
+        social_parts.append(f"LinkedIn: {linkedin}")
+    if github:
+        social_parts.append(f"GitHub: {github}")
+    if kaggle:
+        social_parts.append(f"Kaggle: {kaggle}")
+    if social_parts:
+        story.append(Paragraph(' | '.join(social_parts), styles['ContactLine']))
+
+    story.append(HRFlowable(width="100%", thickness=0.8, spaceBefore=1, spaceAfter=8, color=colors.black))
+
+    # ---- SUMMARY ----
+    summary = resume_data.get('professional_summary', '')
+    if summary:
+        story.append(Paragraph("PROFESSIONAL SUMMARY", styles['SectionHeading']))
+        story.append(Paragraph(summary, styles['BodyResume']))
+
+    # ---- SKILLS ----
+    skills = resume_data.get('skills', [])
+    if skills:
+        story.append(Paragraph("SKILLS", styles['SectionHeading']))
+        if isinstance(skills, list):
+            skill_text = ', '.join(skills)
+            story.append(Paragraph(skill_text, styles['BodyResume']))
+        elif isinstance(skills, dict):
+            for cat, skill_list in skills.items():
+                if skill_list:
+                    story.append(Paragraph(f"<b>{cat}:</b> {', '.join(skill_list)}", styles['BodyResume']))
+
+    # ---- EXPERIENCE ----
+    exp = resume_data.get('experience', [])
+    if exp:
+        story.append(Paragraph("EXPERIENCE", styles['SectionHeading']))
+        if isinstance(exp, list):
+            for item in exp:
+                if isinstance(item, dict):
+                    title = item.get('title', '')
+                    company = item.get('company', '')
+                    dates = item.get('dates', '')
+                    bullets = item.get('bullets', [])
+                    if title or company:
+                        story.append(Paragraph(f"<b>{title}</b> | {company} {dates if dates else ''}".strip(), styles['BodyResume']))
+                    if bullets:
+                        bullet_items = []
+                        for b in bullets:
+                            bullet_items.append(ListItem(Paragraph(b, styles['BulletResume']), leftIndent=8))
+                        story.append(ListFlowable(bullet_items, bulletType='bullet', start='circle', leftIndent=15, bulletFontSize=6))
+                else:
+                    story.append(Paragraph(f"• {item}", styles['BodyResume']))
+
+    # ---- PROJECTS ----
+    projects = resume_data.get('projects', [])
+    if projects:
+        story.append(Paragraph("PROJECTS", styles['SectionHeading']))
+        if isinstance(projects, list):
+            for proj in projects:
+                if isinstance(proj, dict):
+                    name = proj.get('name', '')
+                    desc = proj.get('description', '')
+                    tech = proj.get('technologies', [])
+                    if name:
+                        story.append(Paragraph(f"<b>{name}</b>", styles['BodyResume']))
+                    if desc:
+                        story.append(Paragraph(desc, styles['BodyResume']))
+                    if tech:
+                        story.append(Paragraph(f"<i>Technologies:</i> {', '.join(tech)}", styles['BodyResume']))
+                else:
+                    story.append(Paragraph(f"• {proj}", styles['BodyResume']))
+
+    # ---- EDUCATION ----
+    edu = resume_data.get('education', '')
+    if edu:
+        story.append(Paragraph("EDUCATION", styles['SectionHeading']))
+        if isinstance(edu, list):
+            for item in edu:
+                story.append(Paragraph(f"• {item}", styles['BodyResume']))
+        else:
+            story.append(Paragraph(edu, styles['BodyResume']))
+
+    # ---- CERTIFICATIONS ----
+    certs = resume_data.get('certifications', '')
+    if certs:
+        story.append(Paragraph("CERTIFICATIONS", styles['SectionHeading']))
+        if isinstance(certs, list):
+            for c in certs:
+                story.append(Paragraph(f"• {c}", styles['BodyResume']))
+        else:
+            story.append(Paragraph(certs, styles['BodyResume']))
+
+    doc.build(story)
+    return output_path
+
+# ============================================================
+# HELPER FUNCTIONS
+# ============================================================
+
+def clean_text(value):
+    if value is None:
+        return ""
+    return str(value).strip()
+
+def safe_list(value):
+    if value is None:
+        return []
+    if isinstance(value, (list, tuple, set)):
+        return [clean_text(x) for x in value if clean_text(x)]
+    if isinstance(value, str):
+        return [clean_text(x) for x in value.splitlines() if clean_text(x)]
+    return [clean_text(value)] if clean_text(value) else []
+
+def normalize_score(value):
+    try:
+        v = float(value)
+        if 0 <= v <= 1:
+            v *= 100
+        return max(0.0, min(100.0, v))
+    except:
+        return 0.0
+
+def get_match_level(score):
+    s = normalize_score(score)
+    if s >= 85:
+        return "Excellent Match"
+    if s >= 70:
+        return "Strong Match"
+    if s >= 55:
+        return "Good Match"
+    if s >= 40:
+        return "Moderate Match"
+    return "Low Match"
+
+def display_skill_list(skills, matched=True):
+    skills = safe_list(skills)
+    if not skills:
+        if matched:
+            st.info("No matched skills found.")
+        else:
+            st.success("No missing skills detected.")
+        return
+    symbol = "✓" if matched else "✗"
+    for skill in skills:
+        st.markdown(f"**{symbol}** {skill}")
+
+def display_resume_items(items):
+    items = safe_list(items)
+    if not items:
+        st.info("No information available.")
+        return
+    for item in items:
+        if isinstance(item, dict):
+            title = item.get('title') or item.get('name') or ''
+            desc = item.get('description') or item.get('details') or ''
+            if title:
+                st.markdown(f"**{clean_text(title)}**")
+            if desc:
+                st.write(f"  {clean_text(desc)}")
+        else:
+            st.write(f"• {clean_text(item)}")
+
+# ============================================================
+# CACHED COMPONENTS
+# ============================================================
+
+@st.cache_resource
+def get_matcher():
+    return ResumeJobMatcher()
+
+@st.cache_resource
+def get_tailor():
+    return ResumeTailor()
+
+# ============================================================
+# UI
+# ============================================================
+
+st.markdown("""
     <style>
-
-    .main-title {
-        font-size: 42px;
-        font-weight: 700;
-        text-align: center;
-        margin-bottom: 5px;
-    }
-
-    .subtitle {
-        text-align: center;
-        font-size: 18px;
-        color: #666;
-        margin-bottom: 30px;
-    }
-
-    .score-box {
-        padding: 20px;
-        border-radius: 12px;
-        text-align: center;
-        border: 1px solid #ddd;
-        background: #f8f9fa;
-    }
-
-    .score-number {
-        font-size: 36px;
-        font-weight: bold;
-    }
-
+    .hero { background: linear-gradient(135deg, #111827 0%, #1e3a5f 100%); padding: 2rem; border-radius: 20px; margin-bottom: 1.5rem; }
+    .hero-title { color: white; font-size: 2rem; font-weight: 800; }
+    .hero-subtitle { color: #dbeafe; font-size: 1rem; }
+    .section-title { font-size: 1.3rem; font-weight: 700; color: #1e3a5f; margin-top: 1.5rem; margin-bottom: 0.5rem; }
+    .protected-box { background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 12px; padding: 1rem; margin: 1rem 0; }
+    .protected-title { color: #1d4ed8; font-weight: 700; }
+    .validation-success { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 12px; padding: 1rem; color: #166534; font-weight: 600; }
+    .download-box { background: #f0fdf4; border: 2px solid #22c55e; border-radius: 16px; padding: 1.5rem; text-align: center; margin: 1rem 0; }
+    .download-box-title { font-size: 1.2rem; font-weight: 700; color: #15803d; }
+    .score-card { background: white; border: 1px solid #e5e7eb; border-radius: 12px; padding: 1rem; text-align: center; }
+    .score-value { font-size: 1.8rem; font-weight: 800; color: #111827; }
+    .score-label { color: #64748b; font-size: 0.8rem; font-weight: 600; }
+    .stButton > button { border-radius: 10px; font-weight: 700; min-height: 44px; }
     </style>
-    """,
-    unsafe_allow_html=True
-)
+""", unsafe_allow_html=True)
 
-
-# ============================================================
-# HEADER
-# ============================================================
-
-st.markdown(
-    '<div class="main-title">🤖 AI Resume Tailoring System</div>',
-    unsafe_allow_html=True
-)
-
-st.markdown(
-    '<div class="subtitle">'
-    'ML/DL-powered Resume Analysis, ATS Matching & Resume Tailoring'
-    '</div>',
-    unsafe_allow_html=True
-)
-
+# HERO
+st.markdown("""
+    <div class="hero">
+        <div class="hero-title">🤖 AI Resume Tailoring System</div>
+        <div class="hero-subtitle">ML/DL-powered Resume Analysis, Semantic Matching, ATS Optimization & Skill Gap Analysis</div>
+    </div>
+""", unsafe_allow_html=True)
 
 # ============================================================
-# SIDEBAR
+# SIDEBAR – Protected Information Manual Input
 # ============================================================
 
 with st.sidebar:
+    st.markdown("### 🔒 Protected Information")
+    st.caption("Enter your personal details (these will be used in the final resume).")
 
-    st.header("⚙️ System")
+    name = st.text_input("Full Name", placeholder="e.g., Summaiya Bibi")
+    phone = st.text_input("Phone", placeholder="+92 300 1234567")
+    email = st.text_input("Email", placeholder="summaiya@example.com")
+    linkedin = st.text_input("LinkedIn URL", placeholder="https://linkedin.com/in/yourprofile")
+    github = st.text_input("GitHub URL", placeholder="https://github.com/yourusername")
+    kaggle = st.text_input("Kaggle URL", placeholder="https://kaggle.com/yourusername")
+    location = st.text_input("Location", placeholder="Islamabad, Pakistan")
+    education = st.text_area("Education (one per line)", placeholder="BS Computer Science\nVirtual University of Pakistan\n2021–2025")
+    certifications = st.text_area("Certifications (one per line)", placeholder="Machine Learning Specialization\nGenerative AI Specialization")
 
-    st.write("AI Resume Tailoring Pipeline")
-
-    st.markdown(
-        """
-        **Pipeline**
-
-        📄 Resume Upload  
-        ↓  
-        🔍 Resume Parsing  
-        ↓  
-        📝 Job Description Analysis  
-        ↓  
-        🧠 Semantic Matching  
-        ↓  
-        📊 ATS Score  
-        ↓  
-        🔎 Skill Gap Analysis  
-        ↓  
-        ✨ Resume Tailoring  
-        ↓  
-        📥 DOCX / PDF
-        """
-    )
-
-    st.divider()
-
-    st.info(
-        "Only add skills, experience or projects "
-        "that are genuinely supported by the candidate."
-    )
-
+    st.caption("These fields are **never** generated by AI – they are copied exactly as you type them.")
 
 # ============================================================
-# INPUT SECTION
+# MAIN INPUT
 # ============================================================
 
-st.header("1️⃣ Upload Your Resume")
+st.markdown('<div class="section-title">1️⃣ Upload Your Master Resume</div>', unsafe_allow_html=True)
+resume_file = st.file_uploader("Upload Resume PDF", type=["pdf"])
 
-resume_file = st.file_uploader(
-    "Upload Resume PDF",
-    type=["pdf"]
-)
+st.markdown('<div class="section-title">2️⃣ Enter Target Job Description</div>', unsafe_allow_html=True)
+job_description = st.text_area("Paste the complete Job Description here", height=250)
 
+st.markdown("""
+    <div class="protected-box">
+        <div class="protected-title">🔒 Resume Protection Policy</div>
+        <div style="color:#475569;font-size:0.9rem;">
+            The information you enter in the sidebar is used as your protected data.
+            <br><b>Missing JD skills are reported separately and are NOT added to your resume.</b>
+        </div>
+    </div>
+""", unsafe_allow_html=True)
 
-st.header("2️⃣ Enter Job Description")
-
-job_description = st.text_area(
-    "Paste the complete Job Description here",
-    height=300,
-    placeholder=(
-        "Example:\n\n"
-        "We are looking for a Machine Learning Engineer "
-        "with strong Python, SQL, TensorFlow and Machine "
-        "Learning experience..."
-    )
-)
-
-
-# ============================================================
-# ANALYZE BUTTON
-# ============================================================
-
-analyze_button = st.button(
-    "🚀 Analyze Resume & Job",
-    type="primary",
-    use_container_width=True
-)
-
+analyze_button = st.button("🚀 Analyze & Tailor Resume", type="primary", use_container_width=True)
 
 # ============================================================
 # MAIN PIPELINE
 # ============================================================
 
 if analyze_button:
-
     if resume_file is None:
-
-        st.error("❌ Please upload your resume PDF.")
-
+        st.error("⚠️ Please upload your resume PDF.")
         st.stop()
-
     if not job_description.strip():
-
-        st.error("❌ Please enter the Job Description.")
-
+        st.error("⚠️ Please enter the job description.")
         st.stop()
-
-
-    # --------------------------------------------------------
-    # SAVE TEMPORARY RESUME
-    # --------------------------------------------------------
 
     temp_path = None
-
     try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as f:
+            f.write(resume_file.getbuffer())
+            temp_path = f.name
 
-        with tempfile.NamedTemporaryFile(
-            delete=False,
-            suffix=".pdf"
-        ) as temp_file:
+        # ---------- PARSE RESUME ----------
+        st.divider()
+        st.markdown('<div class="section-title">🔍 Step 1 — Resume Parsing</div>', unsafe_allow_html=True)
+        parser = ResumeParser()
+        with st.spinner("Parsing resume..."):
+            if hasattr(parser, "parse_resume"):
+                parsed = parser.parse_resume(temp_path)
+            else:
+                text = parser.parse(temp_path)
+                if hasattr(parser, "extract_information"):
+                    parsed = parser.extract_information(text)
+                else:
+                    parsed = {"text": text}
 
-            temp_file.write(
-                resume_file.getbuffer()
-            )
+        if not isinstance(parsed, dict):
+            parsed = {"text": str(parsed)}
 
-            temp_path = temp_file.name
-
-
-        # ====================================================
-        # STEP 1 — RESUME PARSING
-        # ====================================================
-
-        with st.spinner("📄 Parsing resume..."):
-
-            parser = ResumeParser()
-
-            parsed_resume = parser.parse(
-                temp_path
-            )
-
+        resume_text = parsed.get("text") or parsed.get("resume_text") or ""
+        if not resume_text:
+            st.error("Could not extract text from resume.")
+            st.stop()
 
         st.success("✅ Resume parsed successfully.")
 
+        # ---------- PROTECTED DATA – use manual input or fallback ----------
+        protected = {
+            "name": name.strip() or parsed.get("name", "Candidate"),
+            "phone": phone.strip() or parsed.get("phone", ""),
+            "email": email.strip() or parsed.get("email", ""),
+            "linkedin": linkedin.strip() or parsed.get("linkedin", ""),
+            "github": github.strip() or parsed.get("github", ""),
+            "kaggle": kaggle.strip() or parsed.get("kaggle", ""),
+            "location": location.strip() or parsed.get("location", ""),
+            "education": education.strip() or parsed.get("education", ""),
+            "certifications": certifications.strip() or parsed.get("certifications", ""),
+        }
 
-        # ====================================================
-        # EXTRACT RESUME TEXT
-        # ====================================================
+        with st.expander("🔒 Protected Information Used"):
+            for k, v in protected.items():
+                st.write(f"**{k.capitalize()}:** {v if v else '—'}")
 
-        if isinstance(parsed_resume, dict):
-
-            resume_text = (
-                parsed_resume.get("text")
-                or parsed_resume.get("resume_text")
-                or parsed_resume.get("content")
-                or ""
-            )
-
-        else:
-
-            resume_text = str(
-                parsed_resume
-            )
-
-
-        # Fallback
-
-        if not resume_text.strip():
-
-            st.warning(
-                "Resume text could not be extracted."
-            )
-
-            resume_text = ""
-
-
-        # ====================================================
-        # STEP 2 — JOB DESCRIPTION ANALYSIS
-        # ====================================================
-
-        with st.spinner(
-            "🔍 Analyzing Job Description..."
-        ):
-
+        # ---------- JD ANALYSIS ----------
+        st.markdown('<div class="section-title">📝 Step 2 — Job Description Analysis</div>', unsafe_allow_html=True)
+        with st.spinner("Analyzing JD..."):
             jd_analyzer = JDAnalyzer()
+            jd_result = jd_analyzer.analyze(job_description) if hasattr(jd_analyzer, "analyze") else {}
 
-            jd_result = jd_analyzer.analyze(
-                job_description
-            )
+        job_title = jd_result.get("job_title") or "Target Position"
+        st.success(f"✅ Target position: {job_title}")
 
+        # ---------- SKILL EXTRACTION ----------
+        st.markdown('<div class="section-title">🧠 Step 3 — Skill Extraction</div>', unsafe_allow_html=True)
+        with st.spinner("Extracting skills..."):
+            resume_skills = safe_list(extract_skills(resume_text))
+            skill_comp = compare_skills(resume_text, job_description) or {}
+            matched_skills = safe_list(skill_comp.get("matched_skills", []))
+            missing_skills = safe_list(skill_comp.get("missing_skills", []))
+            keyword_score = normalize_score(skill_comp.get("match_percentage", 0))
 
-        # ====================================================
-        # JD INFORMATION
-        # ====================================================
-
-        job_title = jd_result.get(
-            "job_title",
-            "Target Position"
-        )
-
-        required_skills = jd_result.get(
-            "skills",
-            []
-        )
-
-        experience_required = jd_result.get(
-            "experience_years",
-            0
-        )
-
-        qualifications = jd_result.get(
-            "qualifications",
-            []
-        )
-
-        responsibilities = jd_result.get(
-            "responsibilities",
-            []
-        )
-
-        keywords = jd_result.get(
-            "keywords",
-            []
-        )
-
-
-        # ====================================================
-        # STEP 3 — RESUME SKILLS
-        # ====================================================
-
-        with st.spinner(
-            "🧠 Extracting resume skills..."
-        ):
-
-            resume_skills = extract_skills(
-                resume_text
-            )
-
-
-        # ====================================================
-        # STEP 4 — MATCHING
-        # ====================================================
-
-        with st.spinner(
-            "🤖 Running ML semantic matching..."
-        ):
-
-            matcher = ResumeJobMatcher()
-
-            match_result = matcher.match(
-                resume_text,
-                job_description
-            )
-
-
-        # ====================================================
-        # MATCH RESULTS
-        # ====================================================
-
-        matched_skills = match_result.get(
-            "matched_skills",
-            []
-        )
-
-        missing_skills = match_result.get(
-            "missing_skills",
-            []
-        )
-
-        keyword_score = float(
-            match_result.get(
-                "keyword_score",
-                0
-            )
-        )
-
-        semantic_score = float(
-            match_result.get(
-                "semantic_score",
-                0
-            )
-        )
-
-        final_score = float(
-            match_result.get(
-                "final_match_score",
-                match_result.get(
-                    "final_score",
-                    0
-                )
-            )
-        )
-
-        match_level = match_result.get(
-            "match_level",
-            "Unknown"
-        )
-
-
-        # ====================================================
-        # RESULTS
-        # ====================================================
-
-        st.divider()
-
-        st.header("📊 Resume Analysis Results")
-
-
-        # ----------------------------------------------------
-        # SCORE CARDS
-        # ----------------------------------------------------
-
-        col1, col2, col3, col4 = st.columns(4)
-
-
-        with col1:
-
-            st.metric(
-                "ATS Score",
-                f"{final_score:.2f}%"
-            )
-
-
-        with col2:
-
-            st.metric(
-                "Semantic Score",
-                f"{semantic_score:.2f}%"
-            )
-
-
-        with col3:
-
-            st.metric(
-                "Keyword Score",
-                f"{keyword_score:.2f}%"
-            )
-
-
-        with col4:
-
-            st.metric(
-                "Match Level",
-                match_level
-            )
-
-
-        # ====================================================
-        # JOB INFORMATION
-        # ====================================================
-
-        st.subheader("🎯 Target Job")
-
-        st.write(
-            f"**Job Title:** {job_title}"
-        )
-
-        st.write(
-            f"**Experience Required:** "
-            f"{experience_required} years"
-        )
-
-
-        # ====================================================
-        # SKILLS
-        # ====================================================
-
-        col1, col2 = st.columns(2)
-
-
-        with col1:
-
-            st.subheader(
-                "✅ Matched Skills"
-            )
-
-            if matched_skills:
-
-                for skill in matched_skills:
-
-                    st.success(
-                        f"✓ {skill}"
-                    )
-
+        # ---------- SEMANTIC MATCHING ----------
+        st.markdown('<div class="section-title">🔗 Step 4 — Semantic & ML Matching</div>', unsafe_allow_html=True)
+        with st.spinner("Running matcher..."):
+            matcher = get_matcher()
+            if hasattr(matcher, "match"):
+                match_result = matcher.match(resume_text, job_description)
             else:
+                match_result = {}
+        semantic_score = normalize_score(match_result.get("semantic_score", 0))
+        final_score = normalize_score(match_result.get("final_score", keyword_score))
+        match_level = get_match_level(final_score)
 
-                st.write(
-                    "No matched skills found."
-                )
+        # ---------- TAILOR RESUME ----------
+        st.markdown('<div class="section-title">✨ Step 5 — Resume Tailoring</div>', unsafe_allow_html=True)
+        with st.spinner("Tailoring resume..."):
+            tailor = get_tailor()
+            tailored = tailor.tailor(parsed, jd_result)
 
+        if not isinstance(tailored, dict):
+            tailored = {}
 
-        with col2:
+        # Force our protected data
+        for k, v in protected.items():
+            tailored[k] = v
+        # Explicitly set phone/email again to be safe
+        tailored["phone"] = phone.strip() or tailored.get("phone", "")
+        tailored["email"] = email.strip() or tailored.get("email", "")
 
-            st.subheader(
-                "❌ Missing Skills"
-            )
+        candidate_skills = [s for s in safe_list(resume_skills) if s.lower() not in {m.lower() for m in safe_list(missing_skills)}]
+        tailored["skills"] = candidate_skills
+        tailored["matched_skills"] = matched_skills
+        tailored["missing_skills"] = missing_skills
+        tailored["job_title"] = job_title
 
-            if missing_skills:
+        # ---------- DISPLAY RESULTS ----------
+        st.divider()
+        st.markdown('<div class="section-title">📊 Resume Analysis Results</div>', unsafe_allow_html=True)
+        cols = st.columns(4)
+        with cols[0]:
+            st.markdown(f"""<div class="score-card"><div class="score-label">🎯 ATS Score</div><div class="score-value">{final_score:.1f}%</div></div>""", unsafe_allow_html=True)
+        with cols[1]:
+            st.markdown(f"""<div class="score-card"><div class="score-label">🔗 Semantic</div><div class="score-value">{semantic_score:.1f}%</div></div>""", unsafe_allow_html=True)
+        with cols[2]:
+            st.markdown(f"""<div class="score-card"><div class="score-label">🧠 Skill Match</div><div class="score-value">{keyword_score:.1f}%</div></div>""", unsafe_allow_html=True)
+        with cols[3]:
+            st.markdown(f"""<div class="score-card"><div class="score-label">📈 Match Level</div><div class="score-value" style="font-size:1.1rem;">{match_level}</div></div>""", unsafe_allow_html=True)
 
-                for skill in missing_skills:
+        # Skills
+        st.markdown('<div class="section-title">🎯 Skill Matching</div>', unsafe_allow_html=True)
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown("**✅ Matched Skills**")
+            display_skill_list(matched_skills, matched=True)
+        with c2:
+            st.markdown("**❌ Missing Skills**")
+            display_skill_list(missing_skills, matched=False)
 
-                    st.error(
-                        f"✗ {skill}"
-                    )
+        st.markdown('<div class="section-title">📈 Skill Gap Summary</div>', unsafe_allow_html=True)
+        g1, g2, g3 = st.columns(3)
+        with g1:
+            st.metric("Resume Skills", len(resume_skills))
+        with g2:
+            st.metric("Matched Skills", len(matched_skills))
+        with g3:
+            st.metric("Missing Skills", len(missing_skills))
 
+        if missing_skills:
+            st.warning("⚠️ Missing skills are shown only for gap analysis. They are NOT added to your resume.")
+
+        # ---------- TAILORED RESUME PREVIEW ----------
+        st.divider()
+        st.markdown('<div class="section-title">📄 Tailored Resume Preview</div>', unsafe_allow_html=True)
+
+        name_display = clean_text(tailored.get("name", "Candidate"))
+        st.markdown(f"## {name_display}")
+        st.caption(f"🎯 {job_title}")
+
+        contact = []
+        for key in ["phone", "email", "location"]:
+            val = clean_text(tailored.get(key, ""))
+            if val:
+                contact.append(val)
+        if contact:
+            st.write(" • ".join(contact))
+
+        social = []
+        for key in ["linkedin", "github", "kaggle"]:
+            val = clean_text(tailored.get(key, ""))
+            if val:
+                social.append(val)
+        if social:
+            st.write(" • ".join(social))
+
+        st.markdown("### Professional Summary")
+        summary = clean_text(tailored.get("professional_summary", ""))
+        st.write(summary if summary else "No summary available.")
+
+        st.markdown("### Skills")
+        if candidate_skills:
+            st.write(", ".join(candidate_skills))
+        else:
+            st.info("No skills available.")
+
+        st.markdown("### Professional Experience")
+        display_resume_items(tailored.get("experience", []))
+
+        st.markdown("### Projects")
+        display_resume_items(tailored.get("projects", []))
+
+        st.markdown("### Education 🔒")
+        edu = tailored.get("education")
+        if edu:
+            if isinstance(edu, list):
+                for item in edu:
+                    st.write(f"• {clean_text(item)}")
             else:
+                st.write(clean_text(edu))
+        else:
+            st.info("No education listed.")
 
-                st.success(
-                    "No major missing skills."
-                )
+        st.markdown("### Certifications 🔒")
+        certs = tailored.get("certifications")
+        if certs:
+            if isinstance(certs, list):
+                for item in certs:
+                    st.write(f"• {clean_text(item)}")
+            else:
+                st.write(clean_text(certs))
+        else:
+            st.info("No certifications listed.")
 
-
-        # ====================================================
-        # JD DETAILS
-        # ====================================================
-
-        with st.expander(
-            "🔎 View Job Description Analysis"
-        ):
-
-            st.write(
-                "**Required Skills**"
-            )
-
-            st.write(
-                ", ".join(required_skills)
-                if required_skills
-                else "None"
-            )
-
-            st.write(
-                "**Qualifications**"
-            )
-
-            st.write(
-                ", ".join(qualifications)
-                if qualifications
-                else "None"
-            )
-
-            st.write(
-                "**Responsibilities**"
-            )
-
-            for responsibility in responsibilities:
-
-                st.write(
-                    f"• {responsibility}"
-                )
-
-            st.write(
-                "**Important Keywords**"
-            )
-
-            st.write(
-                ", ".join(keywords)
-                if keywords
-                else "None"
-            )
-
-
-        # ====================================================
-        # STEP 5 — GAP ANALYSIS
-        # ====================================================
-
+        # ---------- DOWNLOAD SECTION – PDF PRIMARY ----------
         st.divider()
+        st.markdown('<div class="section-title">📥 Download Your Tailored Resume</div>', unsafe_allow_html=True)
 
-        st.header(
-            "🔎 Skill Gap Analysis"
-        )
+        # ---- BUILD TXT CONTENT (always defined) ----
+        def format_txt_list(items):
+            if not items:
+                return "None"
+            if isinstance(items, list):
+                return "\n".join([f"• {clean_text(item)}" for item in items if clean_text(item)])
+            return clean_text(items)
 
-        try:
+        txt_content = f"""
+================================================================================
+                          TAILORED RESUME
+================================================================================
 
-            gap_analyzer = GapAnalyzer()
+PERSONAL INFORMATION (PROTECTED – UNCHANGED)
+---------------------------------------------
+Name         : {clean_text(tailored.get('name', ''))}
+Phone        : {clean_text(tailored.get('phone', ''))}
+Email        : {clean_text(tailored.get('email', ''))}
+LinkedIn     : {clean_text(tailored.get('linkedin', ''))}
+GitHub       : {clean_text(tailored.get('github', ''))}
+Kaggle       : {clean_text(tailored.get('kaggle', ''))}
+Location     : {clean_text(tailored.get('location', ''))}
 
-            gap_result = gap_analyzer.analyze(
-                resume_skills,
-                required_skills
+JOB TARGET
+---------------------------------------------
+Job Title    : {clean_text(job_title)}
+Experience Required: {jd_result.get('experience_years', 0)} years
+
+PROFESSIONAL SUMMARY
+---------------------------------------------
+{clean_text(tailored.get('professional_summary', 'N/A'))}
+
+SKILLS
+---------------------------------------------
+{', '.join(candidate_skills) if candidate_skills else 'None'}
+
+PROJECTS
+---------------------------------------------
+{format_txt_list(tailored.get('projects', []))}
+
+EXPERIENCE
+---------------------------------------------
+{format_txt_list(tailored.get('experience', []))}
+
+EDUCATION (PROTECTED)
+---------------------------------------------
+{format_txt_list(tailored.get('education', []))}
+
+CERTIFICATIONS (PROTECTED)
+---------------------------------------------
+{format_txt_list(tailored.get('certifications', []))}
+
+================================================================================
+MATCHED SKILLS: {', '.join(matched_skills) if matched_skills else 'None'}
+MISSING SKILLS: {', '.join(missing_skills) if missing_skills else 'None'}
+================================================================================
+"""
+
+        if not REPORTLAB_AVAILABLE:
+            st.warning("⚠️ PDF generation requires reportlab. Run: pip install reportlab")
+            st.markdown("""
+                <div class="download-box">
+                    <div class="download-box-title">📝 Download as Text File</div>
+                    <p style="color:#475569;">PDF not available – download TXT instead.</p>
+                </div>
+            """, unsafe_allow_html=True)
+            st.download_button(
+                label="⬇️ Download TXT Resume",
+                data=txt_content,
+                file_name=f"Tailored_Resume_{clean_text(tailored.get('name', 'Candidate')).replace(' ', '_')}.txt",
+                mime="text/plain",
+                use_container_width=True,
+                key="download_txt_primary"
             )
-
-            gap_matched = gap_result.get(
-                "matched_skills",
-                matched_skills
-            )
-
-            gap_missing = gap_result.get(
-                "missing_skills",
-                missing_skills
-            )
-
-            critical_skills = gap_result.get(
-                "critical_missing_skills",
-                []
-            )
-
-            recommendations = gap_result.get(
-                "recommendations",
-                []
-            )
-
-        except Exception:
-
-            gap_matched = matched_skills
-
-            gap_missing = missing_skills
-
-            critical_skills = []
-
-            recommendations = []
-
-
-        col1, col2 = st.columns(2)
-
-
-        with col1:
-
-            st.write(
-                "### Matched"
-            )
-
-            for skill in gap_matched:
-
-                st.write(
-                    f"✓ {skill}"
-                )
-
-
-        with col2:
-
-            st.write(
-                "### Missing"
-            )
-
-            for skill in gap_missing:
-
-                st.write(
-                    f"✗ {skill}"
-                )
-
-
-        if critical_skills:
-
-            st.warning(
-                "⚠️ Critical Missing Skills: "
-                + ", ".join(
-                    critical_skills
-                )
-            )
-
-
-        if recommendations:
-
-            st.subheader(
-                "💡 Recommendations"
-            )
-
-            for recommendation in recommendations:
-
-                st.write(
-                    f"• {recommendation}"
-                )
-
-
-        # ====================================================
-        # STEP 6 — RESUME TAILORING
-        # ====================================================
-
-        st.divider()
-
-        st.header(
-            "✨ Tailored Resume"
-        )
-
-
-        with st.spinner(
-            "✨ Creating tailored resume..."
-        ):
-
-            tailor = ResumeTailor()
-
-            try:
-
-                tailored_result = tailor.tailor(
-                    resume_text,
-                    jd_result
-                )
-
-            except Exception:
-
-                tailored_result = None
-
-
-        # ----------------------------------------------------
-        # HANDLE TAILORING RESULT
-        # ----------------------------------------------------
-
-        if isinstance(
-            tailored_result,
-            dict
-        ):
-
-            tailored_resume = tailored_result
-
         else:
-
-            tailored_resume = {
-
-                "job_title": job_title,
-
-                "professional_summary":
-                    f"Results-oriented professional "
-                    f"targeting a {job_title} role with "
-                    f"practical knowledge of "
-                    f"{', '.join(matched_skills)}.",
-
-                "skills":
-                    matched_skills,
-
-                "experience":
-                    [],
-
-                "projects":
-                    [],
-
-                "education":
-                    [],
-
-                "certifications":
-                    []
-
-            }
-
-
-        # ====================================================
-        # DISPLAY TAILORED RESUME
-        # ====================================================
-
-        st.subheader(
-            "Professional Summary"
-        )
-
-        st.write(
-            tailored_resume.get(
-                "professional_summary",
-                ""
-            )
-        )
-
-
-        st.subheader(
-            "Skills"
-        )
-
-        skills_data = tailored_resume.get(
-            "skills",
-            {}
-        )
-
-
-        if isinstance(
-            skills_data,
-            dict
-        ):
-
-            for category, skills in skills_data.items():
-
-                st.write(
-                    f"**{category}:** "
-                    + ", ".join(skills)
-                )
-
-        elif skills_data:
-
-            st.write(
-                ", ".join(skills_data)
-                if isinstance(
-                    skills_data,
-                    list
-                )
-                else str(skills_data)
-            )
-
-
-        # ====================================================
-        # EXPERIENCE
-        # ====================================================
-
-        st.subheader(
-            "Experience"
-        )
-
-        experience_data = tailored_resume.get(
-            "experience",
-            []
-        )
-
-        if experience_data:
-
-            for item in experience_data:
-
-                st.write(
-                    f"• {item}"
-                )
-
-        else:
-
-            st.write(
-                "No experience details available."
-            )
-
-
-        # ====================================================
-        # PROJECTS
-        # ====================================================
-
-        st.subheader(
-            "Projects"
-        )
-
-        projects_data = tailored_resume.get(
-            "projects",
-            []
-        )
-
-        if projects_data:
-
-            for project in projects_data:
-
-                st.write(
-                    f"• {project}"
-                )
-
-        else:
-
-            st.write(
-                "No projects available."
-            )
-
-
-        # ====================================================
-        # EDUCATION
-        # ====================================================
-
-        st.subheader(
-            "Education"
-        )
-
-        education_data = tailored_resume.get(
-            "education",
-            []
-        )
-
-        if education_data:
-
-            for education in education_data:
-
-                st.write(
-                    f"• {education}"
-                )
-
-        else:
-
-            st.write(
-                "No education information available."
-            )
-
-
-        # ====================================================
-        # CERTIFICATIONS
-        # ====================================================
-
-        st.subheader(
-            "Certifications"
-        )
-
-        certifications_data = tailored_resume.get(
-            "certifications",
-            []
-        )
-
-        if certifications_data:
-
-            for certificate in certifications_data:
-
-                st.write(
-                    f"• {certificate}"
-                )
-
-        else:
-
-            st.write(
-                "No certifications available."
-            )
-
-
-        # ====================================================
-        # SAVE RESULTS IN SESSION
-        # ====================================================
-
-        st.session_state[
-            "tailored_resume"
-        ] = tailored_resume
-
-        st.session_state[
-            "job_title"
-        ] = job_title
-
-        st.session_state[
-            "resume_text"
-        ] = resume_text
-
-        st.session_state[
-            "job_description"
-        ] = job_description
-
-
-        # ====================================================
-        # DOWNLOAD SECTION
-        # ====================================================
-
-        st.divider()
-
-        st.header(
-            "📥 Download Tailored Resume"
-        )
-
-
-        output_dir = BASE_DIR / "output"
-
-        output_dir.mkdir(
-            exist_ok=True
-        )
-
-
-        # ----------------------------------------------------
-        # DOCX
-        # ----------------------------------------------------
-
-        docx_path = (
-            output_dir
-            / "Tailored_Resume.docx"
-        )
-
-
-        try:
-
-            if ResumeGenerator:
-
-                generator = ResumeGenerator()
-
-                generated_resume = (
-                    generator.generate_resume(
-                        job_title=job_title,
-                        skills=matched_skills,
-                        experience=experience_required,
-                        experience_details=
-                            tailored_resume.get(
-                                "experience",
-                                []
-                            ),
-                        projects=
-                            tailored_resume.get(
-                                "projects",
-                                []
-                            ),
-                        education=
-                            tailored_resume.get(
-                                "education",
-                                []
-                            ),
-                        certifications=
-                            tailored_resume.get(
-                                "certifications",
-                                []
-                            )
-                    )
-                )
-
-                # Some generators have different
-                # saving methods, therefore only
-                # use existing file if available.
-
-                if docx_path.exists():
-
-                    with open(
-                        docx_path,
-                        "rb"
-                    ) as file:
+            # ---- Generate PDF automatically ----
+            with st.spinner("Generating professional PDF..."):
+                try:
+                    pdf_path = Path("output/Tailored_Resume.pdf")
+                    generate_pdf_resume(tailored, job_title, pdf_path)
+                    if pdf_path.exists():
+                        with open(pdf_path, "rb") as f:
+                            pdf_data = f.read()
+
+                        st.markdown("""
+                            <div class="download-box" style="border-color:#1e3a5f; background:#eff6ff;">
+                                <div class="download-box-title" style="color:#1e3a5f;">📄 Download Professional PDF Resume</div>
+                                <p style="color:#475569;">Your tailored resume as a professional PDF – ready to send to employers.</p>
+                            </div>
+                        """, unsafe_allow_html=True)
 
                         st.download_button(
-                            label=
-                                "📄 Download DOCX",
-                            data=file.read(),
-                            file_name=
-                                "Tailored_Resume.docx",
-                            mime=
-                                "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                            label="⬇️ Download PDF Resume (Recommended)",
+                            data=pdf_data,
+                            file_name=f"Tailored_Resume_{clean_text(tailored.get('name', 'Candidate')).replace(' ', '_')}.pdf",
+                            mime="application/pdf",
+                            use_container_width=True,
+                            key="download_pdf_primary"
                         )
 
-        except Exception as e:
+                        st.markdown("""
+                            <p style="color:#94a3b8;font-size:0.8rem;margin-top:0.5rem;">
+                                <b>Need a text version?</b> Click below for TXT fallback.
+                            </p>
+                        """, unsafe_allow_html=True)
 
-            st.warning(
-                f"DOCX generation requires the "
-                f"existing generator configuration: {e}"
-            )
+                        with st.expander("📝 Download TXT (fallback)"):
+                            st.download_button(
+                                label="⬇️ Download TXT",
+                                data=txt_content,
+                                file_name=f"Tailored_Resume_{clean_text(tailored.get('name', 'Candidate')).replace(' ', '_')}.txt",
+                                mime="text/plain",
+                                use_container_width=True,
+                                key="download_txt_fallback"
+                            )
+                    else:
+                        st.error("❌ PDF generation failed.")
+                        st.download_button(
+                            label="⬇️ Download TXT (fallback)",
+                            data=txt_content,
+                            file_name=f"Tailored_Resume_{clean_text(tailored.get('name', 'Candidate')).replace(' ', '_')}.txt",
+                            mime="text/plain",
+                            use_container_width=True,
+                            key="download_txt_fallback_error"
+                        )
+                except Exception as e:
+                    st.error(f"❌ PDF generation error: {e}")
+                    st.download_button(
+                        label="⬇️ Download TXT (fallback)",
+                        data=txt_content,
+                        file_name=f"Tailored_Resume_{clean_text(tailored.get('name', 'Candidate')).replace(' ', '_')}.txt",
+                        mime="text/plain",
+                        use_container_width=True,
+                        key="download_txt_fallback_error2"
+                    )
 
-
-        # ----------------------------------------------------
-        # PDF
-        # ----------------------------------------------------
-
-        pdf_path = (
-            output_dir
-            / "Tailored_Resume.pdf"
-        )
-
-
-        if pdf_path.exists():
-
-            with open(
-                pdf_path,
-                "rb"
-            ) as file:
-
-                st.download_button(
-                    label=
-                        "📕 Download PDF",
-                    data=file.read(),
-                    file_name=
-                        "Tailored_Resume.pdf",
-                    mime=
-                        "application/pdf"
-                )
-
-        else:
-
-            st.info(
-                "PDF generator has not created the "
-                "latest file yet."
-            )
-
-
-        # ====================================================
-        # FINAL STATUS
-        # ====================================================
-
-        st.success(
-            "🎉 Resume analysis and tailoring completed!"
-        )
-
+        st.success("🎉 Resume analysis and tailoring completed successfully!")
 
     except Exception as e:
-
-        st.error(
-            "❌ An error occurred while running "
-            "the AI Resume Tailoring pipeline."
-        )
-
-        st.exception(e)
-
+        st.error(f"❌ Error: {e}")
+        import traceback
+        with st.expander("🔧 Details"):
+            st.code(traceback.format_exc())
 
     finally:
-
-        # ----------------------------------------------------
-        # REMOVE TEMP FILE
-        # ----------------------------------------------------
-
-        if temp_path:
-
+        if temp_path and os.path.exists(temp_path):
             try:
-
-                os.remove(
-                    temp_path
-                )
-
+                os.remove(temp_path)
             except Exception:
-
                 pass
-
 
 # ============================================================
 # FOOTER
 # ============================================================
 
-st.divider()
-
-st.caption(
-    "AI Resume Tailoring System | "
-    "Semantic Matching + ATS Analysis + Skill Gap Analysis"
-)
+st.markdown("""
+    <div style="text-align:center;color:#94a3b8;font-size:0.8rem;padding-top:2rem;">
+        AI Resume Tailoring System &bull; Sentence Transformers &bull; Semantic Matching &bull; ML/DL
+    </div>
+""", unsafe_allow_html=True)
