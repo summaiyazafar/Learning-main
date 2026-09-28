@@ -101,7 +101,7 @@ class JDAnalyzer:
     def __init__(
         self,
         embedding_model_name: str = "all-MiniLM-L6-v2",
-        use_embeddings: bool = True
+        use_embeddings: bool = False
     ):
         self.embedding_model_name = embedding_model_name
 
@@ -1476,8 +1476,89 @@ class JDAnalyzer:
         )
 
     # ========================================================
+    # SMART TITLE CASE (preserves acronyms)
+    # ========================================================
+
+    def _smart_title_case(self, title: str) -> str:
+        """
+        Title-case a job title while preserving common tech acronyms.
+        e.g. "senior ai/ml engineer" → "AI/ML Engineer" (seniority prefix stripped)
+        """
+        # Acronyms and special terms that should be uppercased
+        acronyms = {
+            "ai", "ml", "nlp", "sql", "bi", "aws", "gcp", "api",
+            "qa", "ui", "ux", "hr", "it", "vp",
+            "etl", "ci", "cd", "devops", "ios", "sre", "dba",
+            "ai/ml", "ci/cd", "ui/ux"
+        }
+
+        words = title.split()
+        result = []
+        for word in words:
+            lower_word = word.lower()
+            # Check if the entire word (including slash-separated parts) is an acronym
+            if lower_word in acronyms:
+                result.append(word.upper())
+            # Handle slash-separated words like "ai/ml"
+            elif "/" in word:
+                parts = word.split("/")
+                cased_parts = []
+                for part in parts:
+                    if part.lower() in acronyms:
+                        cased_parts.append(part.upper())
+                    else:
+                        cased_parts.append(part.capitalize())
+                result.append("/".join(cased_parts))
+            else:
+                result.append(word.capitalize())
+        return " ".join(result)
+
+    # ========================================================
     # EXTRACT JOB TITLE
     # ========================================================
+
+    def clean_job_title(self, title: str) -> str:
+        """
+        Clean and sanitize job title strings by removing metadata noise.
+
+        Handles cases like:
+            'Senior AI EngineerLocation: IslamabadJob Type: Full-time'
+            → 'AI Engineer'
+        """
+        if not title:
+            return "Target Position"
+
+        # Step 1: Insert a space before concatenated metadata labels
+        # e.g. "EngineerLocation" → "Engineer Location"
+        title = re.sub(
+            r"(?i)(engineer|developer|analyst|scientist|manager|lead|architect|specialist)"
+            r"(Location|Job|Type|Description|Department|About|Salary|Responsibilities|Requirements|Qualifications)",
+            r"\1 \2", title
+        )
+
+        # Step 2: Split on metadata keywords and take only the first part
+        split_pattern = (
+            r"(?i)(?:\bLocation\b|\bJob\s*Type\b|\bJob\s*Description\b|"
+            r"\bAbout\s+the\s+Job\b|\bDepartment\b|\bSalary\b|"
+            r"\bResponsibilities\b|\bRequirements\b|\bQualifications\b|"
+            r"\bOverview\b|\bHybrid\b|\bFull[\s-]*time\b|\bPart[\s-]*time\b|"
+            r"\bRemote\b|\bOnsite\b|\bOn[\s-]*site\b)"
+        )
+        title = re.split(split_pattern, title)[0].strip()
+
+        # Step 3: Strip trailing punctuation and noise
+        title = re.sub(r"[:\-–—,|/()]+$", "", title).strip()
+
+        # Step 4: Remove seniority/level prefixes (Senior, Junior, Lead, etc.)
+        title = re.sub(
+            r"(?i)^(?:senior|sr\.?|junior|jr\.?|lead|principal|staff|associate|chief|head|director|entry[\s-]*level)\s+",
+            "", title
+        ).strip()
+
+        # Step 5: Validate
+        if not title or len(title) < 2:
+            return "Target Position"
+        return title
 
     def extract_job_title(
         self,
@@ -1526,31 +1607,39 @@ class JDAnalyzer:
                         title
                     )
 
+                    cleaned = self.clean_job_title(title)
                     if (
-                        2
-                        <= len(title.split())
-                        <= 12
-                    ):
+                        1
+                        <= len(cleaned.split())
+                        <= 10
+                    ) and cleaned != "Target Position":
+                        return cleaned
 
-                        return title
-
-        # Common job titles
+        # Common job titles (ordered longest-first so more specific titles match before shorter ones)
+        # NOTE: No seniority prefixes (Senior, Junior, Lead, etc.) — only clean base titles
         title_keywords = [
 
             "machine learning engineer",
+
             "artificial intelligence engineer",
+
+            "ai/ml engineer",
             "ai engineer",
 
             "data scientist",
+
             "data analyst",
+
             "data engineer",
 
             "business analyst",
+
             "business intelligence analyst",
 
             "power bi developer",
 
             "ml engineer",
+
             "nlp engineer",
 
             "computer vision engineer",
@@ -1588,7 +1677,7 @@ class JDAnalyzer:
 
             if title in lower_text:
 
-                return title.title()
+                return self._smart_title_case(title)
 
         # First meaningful line
         bad_words = {

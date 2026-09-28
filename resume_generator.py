@@ -12,6 +12,8 @@ Purpose:
   projects, or experience
 """
 
+from __future__ import annotations
+
 import os
 import re
 from copy import deepcopy
@@ -23,6 +25,7 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.enum.style import WD_STYLE_TYPE
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
+from docx.text.paragraph import Paragraph
 
 
 class ResumeGenerator:

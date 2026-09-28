@@ -71,6 +71,54 @@ except ImportError:
 
 
 # ============================================================
+# TEMPLATE COLOR PALETTES
+# ============================================================
+
+TEMPLATE_PALETTES = {
+    "modern_executive": {
+        "name": "Modern Executive",
+        "primary": colors.HexColor("#1E3A8A"),
+        "secondary": colors.HexColor("#2563EB"),
+        "text": colors.HexColor("#1F2937"),
+        "meta": colors.HexColor("#4B5563"),
+        "line": colors.HexColor("#1E3A8A"),
+        "line_thickness": 0.8,
+        "align": TA_CENTER,
+    },
+    "harvard_ats": {
+        "name": "Harvard ATS Classic",
+        "primary": colors.HexColor("#111827"),
+        "secondary": colors.HexColor("#374151"),
+        "text": colors.HexColor("#111827"),
+        "meta": colors.HexColor("#4B5563"),
+        "line": colors.HexColor("#111827"),
+        "line_thickness": 0.6,
+        "align": TA_CENTER,
+    },
+    "silicon_valley": {
+        "name": "Silicon Valley Tech",
+        "primary": colors.HexColor("#0F766E"),
+        "secondary": colors.HexColor("#0D9488"),
+        "text": colors.HexColor("#0F172A"),
+        "meta": colors.HexColor("#334155"),
+        "line": colors.HexColor("#0F766E"),
+        "line_thickness": 1.0,
+        "align": TA_LEFT,
+    },
+    "creative_indigo": {
+        "name": "Creative Indigo",
+        "primary": colors.HexColor("#4338CA"),
+        "secondary": colors.HexColor("#6366F1"),
+        "text": colors.HexColor("#1E1B4B"),
+        "meta": colors.HexColor("#4338CA"),
+        "line": colors.HexColor("#4338CA"),
+        "line_thickness": 1.0,
+        "align": TA_LEFT,
+    },
+}
+
+
+# ============================================================
 # PDF RESUME GENERATOR
 # ============================================================
 
@@ -127,6 +175,30 @@ class PDFResumeGenerator:
     # NORMALIZE LIST
     # ========================================================
 
+    def clean_job_title(self, title: str) -> str:
+        """
+        Sanitize job title string by stripping raw metadata labels.
+        Preserves the full job title including seniority prefixes.
+        """
+        if not title:
+            return ""
+        # Insert space before concatenated metadata labels
+        # e.g. "EngineerLocation" → "Engineer Location"
+        title = re.sub(
+            r"(?i)(engineer|developer|analyst|scientist|manager|lead|architect|specialist)"
+            r"(Location|Job|Type|Description|Department|About|Salary|Responsibilities|Requirements|Qualifications)",
+            r"\1 \2", title
+        )
+        split_pattern = r"(?i)(?:location|job\s*type|job\s*description|about\s+the\s+job|department|salary|experience|responsibilities|requirements|qualifications|overview|mode|hybrid|full-time|part-time|remote|onsite|islamabad|karachi|lahore|rawalpindi)"
+        title = re.split(split_pattern, title)[0].strip()
+        title = re.sub(r"^[:\-–—\s,|]+|[:\-–—\s,|]+$", "", title).strip()
+        # Remove seniority/level prefixes (Senior, Junior, Lead, etc.)
+        title = re.sub(
+            r"(?i)^(?:senior|sr\.?|junior|jr\.?|lead|principal|staff|associate|chief|head|director|entry[\s-]*level)\s+",
+            "", title
+        ).strip()
+        return title
+
     def normalize_list(self, value: Any) -> List[str]:
         """
         Convert various input types into a clean list of strings.
@@ -142,13 +214,15 @@ class PDFResumeGenerator:
 
         # If it's a string, split by common delimiters and bullets
         if isinstance(value, str):
-            # Split by newline, comma, semicolon, or bullet characters
-            parts = re.split(r"[\n,;|•●▪◦*-]+", value)
+            # Split by newline, comma, semicolon, or bullet characters (DO NOT include hyphen '-' in character class)
+            parts = re.split(r"[\n,;|•●▪◦]+", value)
             result = []
             for part in parts:
                 part = self.clean_text(part)
-                # Remove common bullet characters from the start
-                part = re.sub(r"^[•●▪◦*-]\s*", "", part)
+                # Remove common bullet characters or numbers from start
+                part = re.sub(r"^(?:[•●▪◦*-]|\d+[\.\)])\s*", "", part)
+                # Fix typos like "Computer, Vision"
+                part = re.sub(r"(?i)\bComputer\s*,\s*Vision\b", "Computer Vision", part)
                 if part:
                     result.append(part)
             return result
@@ -158,12 +232,14 @@ class PDFResumeGenerator:
             result = []
             for item in value:
                 item = self.clean_text(item)
+                item = re.sub(r"(?i)\bComputer\s*,\s*Vision\b", "Computer Vision", item)
                 if item:
                     result.append(item)
             return result
 
         # Single value
         value = self.clean_text(value)
+        value = re.sub(r"(?i)\bComputer\s*,\s*Vision\b", "Computer Vision", value)
         return [value] if value else []
 
     # ========================================================
@@ -188,10 +264,13 @@ class PDFResumeGenerator:
     # CREATE STYLES
     # ========================================================
 
-    def create_styles(self):
+    def create_styles(self, template: str = "modern_executive"):
         """
-        Create professional ATS-friendly PDF styles.
+        Create professional ATS-friendly PDF styles with template theming.
         """
+        palette = TEMPLATE_PALETTES.get(template, TEMPLATE_PALETTES["modern_executive"])
+        self.current_palette = palette
+
         styles = getSampleStyleSheet()
 
         # Name
@@ -202,9 +281,9 @@ class PDFResumeGenerator:
                 fontName="Helvetica-Bold",
                 fontSize=20,
                 leading=24,
-                alignment=TA_CENTER,
+                alignment=palette["align"],
                 spaceAfter=3,
-                textColor=colors.black
+                textColor=palette["primary"]
             )
         )
 
@@ -213,12 +292,12 @@ class PDFResumeGenerator:
             ParagraphStyle(
                 name="ResumeTitle",
                 parent=styles["Normal"],
-                fontName="Helvetica",
+                fontName="Helvetica-Bold",
                 fontSize=10.5,
                 leading=13,
-                alignment=TA_CENTER,
+                alignment=palette["align"],
                 spaceAfter=6,
-                textColor=colors.black
+                textColor=palette["secondary"]
             )
         )
 
@@ -230,8 +309,9 @@ class PDFResumeGenerator:
                 fontName="Helvetica",
                 fontSize=8.5,
                 leading=11,
-                alignment=TA_CENTER,
-                spaceAfter=6
+                alignment=palette["align"],
+                spaceAfter=6,
+                textColor=palette["meta"]
             )
         )
 
@@ -246,7 +326,7 @@ class PDFResumeGenerator:
                 alignment=TA_LEFT,
                 spaceBefore=8,
                 spaceAfter=3,
-                textColor=colors.black,
+                textColor=palette["primary"],
                 keepWithNext=True
             )
         )
@@ -260,7 +340,8 @@ class PDFResumeGenerator:
                 fontSize=9,
                 leading=12,
                 alignment=TA_LEFT,
-                spaceAfter=3
+                spaceAfter=3,
+                textColor=palette["text"]
             )
         )
 
@@ -275,7 +356,8 @@ class PDFResumeGenerator:
                 alignment=TA_LEFT,
                 leftIndent=10,
                 firstLineIndent=0,
-                spaceAfter=2
+                spaceAfter=2,
+                textColor=palette["text"]
             )
         )
 
@@ -288,7 +370,8 @@ class PDFResumeGenerator:
                 fontSize=9,
                 leading=12,
                 alignment=TA_LEFT,
-                spaceAfter=2
+                spaceAfter=2,
+                textColor=palette["text"]
             )
         )
 
@@ -301,7 +384,8 @@ class PDFResumeGenerator:
                 fontSize=9.5,
                 leading=12,
                 spaceAfter=1,
-                keepWithNext=True
+                keepWithNext=True,
+                textColor=palette["text"]
             )
         )
 
@@ -313,7 +397,8 @@ class PDFResumeGenerator:
                 fontName="Helvetica-Oblique",
                 fontSize=8.5,
                 leading=11,
-                spaceAfter=2
+                spaceAfter=2,
+                textColor=palette["secondary"]
             )
         )
 
@@ -326,7 +411,8 @@ class PDFResumeGenerator:
                 fontSize=9.3,
                 leading=12,
                 spaceAfter=1,
-                keepWithNext=True
+                keepWithNext=True,
+                textColor=palette["primary"]
             )
         )
 
@@ -356,7 +442,7 @@ class PDFResumeGenerator:
 
     def add_heading(self, story: List, title: str, styles):
         """
-        Add a section heading with a horizontal line.
+        Add a section heading with a horizontal line styled per template.
         """
         title = self.clean_text(title)
         if not title:
@@ -367,13 +453,14 @@ class PDFResumeGenerator:
                 styles["SectionHeading"]
             )
         )
+        palette = getattr(self, "current_palette", None) or TEMPLATE_PALETTES["modern_executive"]
         story.append(
             HRFlowable(
                 width="100%",
-                thickness=0.5,
+                thickness=palette.get("line_thickness", 0.6),
                 spaceBefore=0,
                 spaceAfter=4,
-                color=colors.black
+                color=palette.get("line", colors.black)
             )
         )
 
@@ -391,27 +478,32 @@ class PDFResumeGenerator:
 
         bullet_items = []
         for item in items:
-            bullet_items.append(
-                ListItem(
-                    Paragraph(
-                        self.escape_text(item),
-                        styles["BulletResume"]
-                    ),
-                    leftIndent=8
+            clean_item = self.clean_text(item)
+            # Remove leading bullet symbols AND numbers like "1. ", "5. ", "● "
+            clean_item = re.sub(r"^(?:[-•●▪◦*]|\d+[\.\)])\s*", "", clean_item).strip()
+            if clean_item:
+                bullet_items.append(
+                    ListItem(
+                        Paragraph(
+                            self.escape_text(clean_item),
+                            styles["BulletResume"]
+                        ),
+                        leftIndent=8
+                    )
+                )
+
+        if bullet_items:
+            story.append(
+                ListFlowable(
+                    bullet_items,
+                    bulletType="bullet",
+                    start="circle",
+                    leftIndent=15,
+                    bulletFontName="Helvetica",
+                    bulletFontSize=6
                 )
             )
-
-        story.append(
-            ListFlowable(
-                bullet_items,
-                bulletType="bullet",
-                start="circle",
-                leftIndent=15,
-                bulletFontName="Helvetica",
-                bulletFontSize=6
-            )
-        )
-        story.append(Spacer(1, 2))
+            story.append(Spacer(1, 2))
 
     # ========================================================
     # CREATE CLICKABLE LINK
@@ -685,7 +777,17 @@ class PDFResumeGenerator:
                 story.append(Spacer(1, 2))
 
         else:
-            self.add_bullets(story, projects, styles)
+            # Unpack list of string project items and split inline glued projects (e.g. "FastAPI. 5. Computer Vision")
+            raw_items = self.normalize_list(projects)
+            unpacked_items = []
+            for item in raw_items:
+                item = re.sub(r"(\d+)[\.\)]([A-Za-z])", r"\1. \2", item)
+                parts = re.split(r"(?<=[.!?]|\s)\s*(?=\d+[\.\)]\s*[A-Z])|(?<=[.!?]|\s)\s*(?=[●•▪◦]\s*)", item)
+                for part in parts:
+                    clean_part = re.sub(r"^(?:[-•●▪◦*]|\d+[\.\)])\s*", "", part.strip()).strip()
+                    if clean_part:
+                        unpacked_items.append(clean_part)
+            self.add_bullets(story, unpacked_items, styles)
 
     # ========================================================
     # EDUCATION
@@ -767,25 +869,11 @@ class PDFResumeGenerator:
     def generate_pdf(
         self,
         resume: Dict[str, Any],
-        filename: str = "Tailored_Resume.pdf"
+        filename: str = "Tailored_Resume.pdf",
+        template: str = "modern_executive"
     ) -> str:
         """
-        Generate a professional ATS-friendly PDF resume.
-
-        Parameters
-        ----------
-        resume : dict
-            Resume data with keys: name, email, phone, location,
-            linkedin, github, kaggle, professional_summary,
-            skills, experience, projects, education, certifications,
-            languages, achievements, etc.
-        filename : str
-            Output PDF filename.
-
-        Returns
-        -------
-        str
-            Full path to the generated PDF file.
+        Generate a professional ATS-friendly PDF resume using the specified template theme.
         """
         if not isinstance(resume, dict):
             raise TypeError("resume must be a dictionary")
@@ -801,7 +889,7 @@ class PDFResumeGenerator:
 
         filepath = os.path.join(self.output_folder, filename)
 
-        styles = self.create_styles()
+        styles = self.create_styles(template=template)
 
         document = SimpleDocTemplate(
             filepath,
@@ -832,8 +920,8 @@ class PDFResumeGenerator:
             )
         )
 
-        job_title = self.clean_text(
-            resume.get("job_title", resume.get("target_position", ""))
+        job_title = self.clean_job_title(
+            self.clean_text(resume.get("job_title", resume.get("target_position", "")))
         )
         if job_title:
             story.append(
